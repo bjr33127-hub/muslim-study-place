@@ -11,7 +11,7 @@ function assert(condition, message) {
 
 async function main() {
   const browser = await chromium.launch()
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
   const page = await context.newPage()
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
@@ -41,6 +41,8 @@ async function main() {
     notesWidgetCount: document.querySelectorAll('.widget-frame-notes').length,
     spotifyForms: document.querySelectorAll('.widget-frame-spotify .url-form').length,
     particleCount: document.querySelectorAll('.background-light-particles span').length,
+    magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
+    noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     backgroundText: document.querySelector('.background-list')?.textContent || '',
     spotifyTodoOverlap: (() => {
       const spotify = document.querySelector('.widget-frame-spotify')?.getBoundingClientRect()
@@ -88,6 +90,8 @@ async function main() {
   assert(initial.chainText.includes('continuous'), 'Pomodoro star chain missing')
   assert(initial.spotifyForms === 0, 'Spotify widget still has block controls')
   assert(initial.particleCount === 0, 'Light particles should be removed')
+  assert(initial.magicParticleCanvasCount === 0, 'Magic particles should wait for image backgrounds')
+  assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
   assert(!initial.spotifyTodoOverlap, 'Spotify and Todo widgets overlap')
   assert(initial.visibleWidgets === 6, 'Expected six widgets to be visible')
   assert(initial.notesWidgetCount === 1, 'Notes widget should be visible')
@@ -118,6 +122,10 @@ async function main() {
   assert(
     await page.getByLabel('Daily flame target').isVisible(),
     'Daily flame target setting missing',
+  )
+  assert(
+    await page.getByLabel('Magic particles').isChecked(),
+    'Magic particles setting should default on',
   )
   await page.getByLabel('Focus minutes').fill('26')
   await page.getByLabel('Long break every').fill('3')
@@ -293,6 +301,49 @@ async function main() {
       background.src,
     )
   }
+  await page.waitForSelector('.magic-particles-canvas')
+  await page.waitForTimeout(800)
+  const magicParticlesState = await page.evaluate(() => {
+    const canvas = document.querySelector('.magic-particles-canvas')
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return { canvasCount: 0, litSamples: 0 }
+    }
+
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+
+    if (!gl) {
+      return { canvasCount: 1, litSamples: 0 }
+    }
+
+    const width = gl.drawingBufferWidth
+    const height = gl.drawingBufferHeight
+    const pixels = new Uint8Array(width * height * 4)
+    let litSamples = 0
+
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index] || pixels[index + 1] || pixels[index + 2] || pixels[index + 3]) {
+        litSamples += 1
+
+        if (litSamples > 4) {
+          break
+        }
+      }
+    }
+
+    return { canvasCount: 1, litSamples }
+  })
+  assert(magicParticlesState.canvasCount === 1, 'Magic particle canvas missing')
+  assert(magicParticlesState.litSamples > 0, 'Magic particle canvas is blank')
+
+  await page.locator('.settings-trigger').click()
+  await page.getByLabel('Magic particles').setChecked(false)
+  await page.waitForFunction(() => !document.querySelector('.magic-particles-canvas'))
+  await page.getByLabel('Magic particles').setChecked(true)
+  await page.waitForSelector('.magic-particles-canvas')
+  await page.getByLabel('Close settings').click()
 
   await page.setInputFiles(
     '.upload-button input[type="file"]',
@@ -374,17 +425,87 @@ async function main() {
     'Migrated Japan background did not render',
   )
 
+  await page.evaluate(() => {
+    localStorage.setItem('muslim-study-place:todos', '[]')
+    localStorage.setItem('muslim-study-place:timer:remaining', '1')
+    localStorage.setItem('muslim-study-place:timer:mode', '"focus"')
+    localStorage.setItem('muslim-study-place:timer:running', 'false')
+    localStorage.setItem(
+      'muslim-study-place:pomodoroRun',
+      JSON.stringify({
+        targetPomodoros: 1,
+        completedInTarget: 0,
+        currentRun: 0,
+        bestRun: 0,
+        totalStars: 0,
+        lastStarAt: 0,
+        autoCycle: false,
+      }),
+    )
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  await page.locator('.pomodoro-widget').getByRole('button', { name: 'Start' }).click()
+  await page.waitForTimeout(1800)
+  assert(
+    await page.locator('.finished-banner').getByText('Finished!').isVisible(),
+    'Pomodoro finished banner did not appear',
+  )
+
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1000)
+  await page.waitForSelector('.magic-particles-canvas')
+  await page.waitForTimeout(600)
   const mobile = await page.evaluate(() => ({
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     dockBottom: document.querySelector('.dock')?.getBoundingClientRect().bottom || 0,
     firstWidgetTop:
       document.querySelector('.widget-frame')?.getBoundingClientRect().top || 0,
+    magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
+    magicParticleLitSamples: (() => {
+      const canvas = document.querySelector('.magic-particles-canvas')
+
+      if (!(canvas instanceof HTMLCanvasElement)) {
+        return 0
+      }
+
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+
+      if (!gl) {
+        return 0
+      }
+
+      const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4)
+      let litSamples = 0
+
+      gl.readPixels(
+        0,
+        0,
+        gl.drawingBufferWidth,
+        gl.drawingBufferHeight,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels,
+      )
+
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index] || pixels[index + 1] || pixels[index + 2] || pixels[index + 3]) {
+          litSamples += 1
+
+          if (litSamples > 4) {
+            break
+          }
+        }
+      }
+
+      return litSamples
+    })(),
   }))
   assert(mobile.noHorizontalOverflow, 'Mobile layout has horizontal overflow')
   assert(mobile.dockBottom < mobile.firstWidgetTop, 'Mobile dock overlaps first widget')
+  assert(mobile.magicParticleCanvasCount === 1, 'Mobile magic particles are missing')
+  assert(mobile.magicParticleLitSamples > 0, 'Mobile magic particles are blank')
 
   await browser.close()
   console.log(JSON.stringify({ status: 'ok', initial, mobile }, null, 2))

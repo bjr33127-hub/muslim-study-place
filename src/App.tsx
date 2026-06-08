@@ -197,6 +197,10 @@ function App() {
     'settings:backgroundDim',
     72,
   )
+  const [particlesEnabled, setParticlesEnabled] = usePersistentState(
+    'settings:particlesEnabled',
+    true,
+  )
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [folderBackgrounds, setFolderBackgrounds] = useState<BackgroundAsset[]>([])
   const [uploadedBackgrounds, setUploadedBackgrounds] = useState<BackgroundAsset[]>(
@@ -206,9 +210,9 @@ function App() {
   const [uploadVersion, setUploadVersion] = useState(0)
 
   useEffect(() => {
-    if (layoutVersion < 2) {
+    if (layoutVersion < 3) {
       setLayouts(DEFAULT_LAYOUTS)
-      setLayoutVersion(2)
+      setLayoutVersion(3)
     }
   }, [layoutVersion, setLayoutVersion, setLayouts])
 
@@ -845,7 +849,11 @@ function App() {
 
   return (
     <div className="app-shell">
-      <BackgroundLayer background={activeBackground} dim={backgroundDim} />
+      <BackgroundLayer
+        background={activeBackground}
+        dim={backgroundDim}
+        particlesEnabled={particlesEnabled}
+      />
       <TopBar
         currentBackground={activeBackground.label}
         streak={streak}
@@ -860,12 +868,14 @@ function App() {
         streak={streak}
         timerSettings={timerSettings}
         backgroundDim={backgroundDim}
+        particlesEnabled={particlesEnabled}
         onClose={() => setSettingsOpen(false)}
         onResetLayout={resetLayout}
         onToggleWidget={toggleWidget}
         onDailyGoalChange={updateDailyGoal}
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
+        onParticlesEnabledChange={setParticlesEnabled}
       />
       <Dock layouts={layouts} onToggle={toggleWidget} onFocus={focusWidget} />
       <main className="workspace" aria-label="Study dashboard">

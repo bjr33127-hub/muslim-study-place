@@ -116,6 +116,17 @@ a {
   transform: none;
 }
 
+.magic-particles-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  opacity: 0.92;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
 .background-shade {
   position: absolute;
   inset: 0;
@@ -398,6 +409,43 @@ a {
   100% {
     opacity: 0;
     transform: translate3d(calc(100vw - 420px), -272px, 0) scale(1.35) rotate(18deg);
+  }
+}
+
+@keyframes finished-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes finished-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  52%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes finished-star-pop {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: translateY(0) scale(0.92) rotate(0);
+  }
+  48% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.22) rotate(12deg);
   }
 }
 
@@ -794,6 +842,75 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+.finished-banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  overflow: hidden;
+  border: 1px solid rgba(217, 182, 108, 0.42);
+  border-radius: var(--radius);
+  color: #130d04;
+  background:
+    radial-gradient(circle at 28% 0%, rgba(255, 248, 202, 0.92), transparent 46%),
+    linear-gradient(180deg, #f0cf7d, #b98e3e);
+  box-shadow:
+    0 0 18px rgba(217, 182, 108, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  animation: finished-arrive 620ms cubic-bezier(0.18, 0.84, 0.28, 1) both;
+}
+
+.finished-banner::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(
+    105deg,
+    transparent 18%,
+    rgba(255, 255, 255, 0.34) 42%,
+    transparent 64%
+  );
+  transform: translateX(-120%);
+  animation: finished-shimmer 1.9s ease-in-out infinite 280ms;
+}
+
+.finished-banner span {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #140e04;
+}
+
+.finished-banner svg {
+  fill: currentColor;
+  filter: drop-shadow(0 0 7px rgba(255, 244, 173, 0.9));
+}
+
+.finished-banner svg:nth-child(1) {
+  animation: finished-star-pop 1.28s ease-in-out infinite;
+}
+
+.finished-banner svg:nth-child(2) {
+  animation: finished-star-pop 1.28s ease-in-out infinite 120ms;
+}
+
+.finished-banner svg:nth-child(3) {
+  animation: finished-star-pop 1.28s ease-in-out infinite 240ms;
+}
+
+.finished-banner strong {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .pomodoro-objective-panel,
@@ -1623,8 +1740,15 @@ a {
   .total-star-orb::before,
   .pomodoro-progress span::after,
   .star-flight,
-  .star-row svg.is-new {
+  .star-row svg.is-new,
+  .finished-banner,
+  .finished-banner::after,
+  .finished-banner svg {
     animation: none;
+  }
+
+  .magic-particles-canvas {
+    display: none;
   }
 }
 

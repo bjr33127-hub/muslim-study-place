@@ -13,12 +13,14 @@ type SettingsPanelProps = {
   streak: StreakState
   timerSettings: TimerSettings
   backgroundDim: number
+  particlesEnabled: boolean
   onClose: () => void
   onResetLayout: () => void
   onToggleWidget: (id: WidgetId) => void
   onDailyGoalChange: (value: number) => void
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
+  onParticlesEnabledChange: (value: boolean) => void
 }
 
 export function SettingsPanel({
@@ -27,12 +29,14 @@ export function SettingsPanel({
   streak,
   timerSettings,
   backgroundDim,
+  particlesEnabled,
   onClose,
   onResetLayout,
   onToggleWidget,
   onDailyGoalChange,
   onTimerSettingChange,
   onBackgroundDimChange,
+  onParticlesEnabledChange,
 }: SettingsPanelProps) {
   if (!isOpen) {
     return null
@@ -160,6 +164,15 @@ export function SettingsPanel({
             max="100"
             value={backgroundDim}
             onChange={(event) => onBackgroundDimChange(Number(event.target.value))}
+          />
+        </label>
+        <label className="settings-toggle">
+          <span>Magic particles</span>
+          <input
+            aria-label="Magic particles"
+            type="checkbox"
+            checked={particlesEnabled}
+            onChange={(event) => onParticlesEnabledChange(event.target.checked)}
           />
         </label>
       </section>

@@ -1,12 +1,20 @@
 import type { BackgroundAsset } from '../../types/app'
 import { publicPath } from '../../lib/publicPath'
+import { MagicParticles } from './MagicParticles'
 
 type BackgroundLayerProps = {
   background?: BackgroundAsset
   dim?: number
+  particlesEnabled?: boolean
 }
 
-export function BackgroundLayer({ background, dim = 72 }: BackgroundLayerProps) {
+export function BackgroundLayer({
+  background,
+  dim = 72,
+  particlesEnabled = true,
+}: BackgroundLayerProps) {
+  const showParticles = Boolean(particlesEnabled && background?.kind === 'image')
+
   return (
     <div className="background-layer" aria-hidden="true">
       {background?.kind === 'image' ? (
@@ -32,6 +40,10 @@ export function BackgroundLayer({ background, dim = 72 }: BackgroundLayerProps) 
           />
         </video>
       )}
+      <MagicParticles
+        active={showParticles}
+        sceneKey={background?.id ?? 'background'}
+      />
       <div className="background-shade" style={{ opacity: dim / 100 }} />
     </div>
   )

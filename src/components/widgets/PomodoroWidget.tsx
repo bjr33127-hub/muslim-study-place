@@ -59,6 +59,7 @@ export function PomodoroWidget({
   const target = clampPomodoros(run.targetPomodoros)
   const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
+  const objectiveFinished = run.completedInTarget >= target
 
   const getAudioContext = useCallback(() => {
     if (audioContextRef.current) {
@@ -235,19 +236,30 @@ export function PomodoroWidget({
       <div className="timer-readout">{formatTime(remaining)}</div>
 
       <div className="pomodoro-chain" aria-label="Continuous pomodoro streak">
-        <div className="star-row">
-          {Array.from({ length: target }, (_, index) => (
-            <Star
-              key={index}
-              size={16}
-              strokeWidth={1.8}
-              className={[
-                index < filledStars ? 'is-filled' : '',
-                index === filledStars - 1 ? 'is-new' : '',
-              ].join(' ')}
-            />
-          ))}
-        </div>
+        {objectiveFinished ? (
+          <div className="finished-banner" aria-live="polite">
+            <span aria-hidden="true">
+              <Star size={12} strokeWidth={1.8} />
+              <Sparkle size={13} strokeWidth={1.8} />
+              <Star size={10} strokeWidth={1.8} />
+            </span>
+            <strong>Finished!</strong>
+          </div>
+        ) : (
+          <div className="star-row">
+            {Array.from({ length: target }, (_, index) => (
+              <Star
+                key={index}
+                size={16}
+                strokeWidth={1.8}
+                className={[
+                  index < filledStars ? 'is-filled' : '',
+                  index === filledStars - 1 ? 'is-new' : '',
+                ].join(' ')}
+              />
+            ))}
+          </div>
+        )}
         <div className="chain-meta">
           <span>
             <Sparkle size={13} strokeWidth={1.8} />

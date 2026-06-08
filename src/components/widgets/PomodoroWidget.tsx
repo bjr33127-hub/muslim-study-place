@@ -1,5 +1,5 @@
 import { Minus, Pause, Play, Plus, RotateCcw, Sparkle, Star } from 'lucide-react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { timerSeconds } from '../../lib/timer'
 import { clampPomodoros } from '../../lib/todos'
 import type { PomodoroRunState, TimerMode, TimerSettings } from '../../types/app'
@@ -54,9 +54,71 @@ export function PomodoroWidget({
   onTargetChange,
   onFocusComplete,
 }: PomodoroWidgetProps) {
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const lastBeepAtRef = useRef(0)
   const target = clampPomodoros(run.targetPomodoros)
   const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
+
+  const getAudioContext = useCallback(() => {
+    if (audioContextRef.current) {
+      return audioContextRef.current
+    }
+
+    const AudioContextClass =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext
+
+    if (!AudioContextClass) {
+      return null
+    }
+
+    audioContextRef.current = new AudioContextClass()
+    return audioContextRef.current
+  }, [])
+
+  const primeTimerBeep = useCallback(() => {
+    const context = getAudioContext()
+
+    if (context?.state === 'suspended') {
+      void context.resume().catch(() => undefined)
+    }
+  }, [getAudioContext])
+
+  const playTimerBeep = useCallback(() => {
+    const now = Date.now()
+
+    if (now - lastBeepAtRef.current < 450) {
+      return
+    }
+
+    const context = getAudioContext()
+
+    if (!context) {
+      return
+    }
+
+    lastBeepAtRef.current = now
+
+    if (context.state === 'suspended') {
+      void context.resume().catch(() => undefined)
+    }
+
+    const start = context.currentTime
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+
+    oscillator.type = 'sine'
+    oscillator.frequency.setValueAtTime(720, start)
+    gain.gain.setValueAtTime(0.0001, start)
+    gain.gain.exponentialRampToValueAtTime(0.045, start + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start(start)
+    oscillator.stop(start + 0.18)
+  }, [getAudioContext])
 
   const interruptRun = () => {
     onRunChange((current) => ({
@@ -73,6 +135,16 @@ export function PomodoroWidget({
   }, [onModeChange, onRemainingChange, onRunningChange, timerSettings])
 
   useEffect(() => {
+    window.addEventListener('pointerdown', primeTimerBeep, { passive: true })
+    window.addEventListener('keydown', primeTimerBeep)
+
+    return () => {
+      window.removeEventListener('pointerdown', primeTimerBeep)
+      window.removeEventListener('keydown', primeTimerBeep)
+    }
+  }, [primeTimerBeep])
+
+  useEffect(() => {
     if (!isRunning) {
       return
     }
@@ -84,6 +156,7 @@ export function PomodoroWidget({
         }
 
         window.clearInterval(interval)
+        playTimerBeep()
 
         if (mode === 'focus') {
           onFocusComplete()
@@ -118,6 +191,7 @@ export function PomodoroWidget({
     onFocusComplete,
     onRemainingChange,
     onRunChange,
+    playTimerBeep,
     run,
     switchMode,
     target,
@@ -135,6 +209,7 @@ export function PomodoroWidget({
       return
     }
 
+    primeTimerBeep()
     onRunningChange(true)
   }
 

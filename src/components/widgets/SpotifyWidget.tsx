@@ -1,21 +1,28 @@
-import { usePersistentState } from '../../hooks/usePersistentState'
-import { SPOTIFY_DEFAULT_EMBED_URL } from '../../lib/defaults'
+import { ExternalLink, Headphones } from 'lucide-react'
+import { SPOTIFY_PLAYLIST_URL } from '../../lib/defaults'
 
 export function SpotifyWidget() {
-  const [embedUrl] = usePersistentState(
-    'spotify:embedUrl',
-    SPOTIFY_DEFAULT_EMBED_URL,
-  )
-
   return (
     <div className="spotify-widget">
-      <iframe
-        title="Spotify Quran playlist"
-        className="spotify-embed"
-        src={embedUrl}
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        loading="lazy"
-      />
+      <div className="spotify-launcher">
+        <span className="spotify-mark" aria-hidden="true">
+          <Headphones size={26} strokeWidth={1.7} />
+        </span>
+        <div>
+          <p>Quran playlist</p>
+          <h3>Omar Bn DiaaAldeen</h3>
+          <span>Open in Spotify for full playback.</span>
+        </div>
+        <a
+          className="primary-action spotify-open-link"
+          href={SPOTIFY_PLAYLIST_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open Spotify
+          <ExternalLink size={16} strokeWidth={1.9} />
+        </a>
+      </div>
     </div>
   )
 }

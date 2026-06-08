@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "id": "oasis",
+    "label": "Oasis",
+    "kind": "image",
+    "src": "arabic-oasis.png",
+    "source": "built-in"
+  },
+  {
+    "id": "japan",
+    "label": "Japan",
+    "kind": "image",
+    "src": "japan-garden.png",
+    "source": "built-in"
+  },
+  {
+    "id": "night-cosy",
+    "label": "Night Cosy",
+    "kind": "image",
+    "src": "night-cosy.png",
+    "source": "built-in"
+  }
+]

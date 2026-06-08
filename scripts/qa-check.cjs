@@ -22,10 +22,9 @@ async function main() {
     videoSrc:
       document.querySelector('video.background-media source')?.getAttribute('src') ||
       '',
-    spotifySrc:
-      document
-        .querySelector('iframe[title="Spotify Quran playlist"]')
-        ?.getAttribute('src') || '',
+    spotifyHref:
+      document.querySelector('.spotify-open-link')?.getAttribute('href') || '',
+    spotifyIframeCount: document.querySelectorAll('.widget-frame-spotify iframe').length,
     youtubeSrc:
       document
         .querySelector('iframe[title="YouTube Quran player"]')
@@ -39,8 +38,10 @@ async function main() {
     totalStarsText: document.querySelector('.total-stars-counter')?.textContent || '',
     chainText: document.querySelector('.pomodoro-chain')?.textContent || '',
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
+    notesWidgetCount: document.querySelectorAll('.widget-frame-notes').length,
     spotifyForms: document.querySelectorAll('.widget-frame-spotify .url-form').length,
     particleCount: document.querySelectorAll('.background-light-particles span').length,
+    backgroundText: document.querySelector('.background-list')?.textContent || '',
     spotifyTodoOverlap: (() => {
       const spotify = document.querySelector('.widget-frame-spotify')?.getBoundingClientRect()
       const todo = document.querySelector('.widget-frame-todo')?.getBoundingClientRect()
@@ -66,9 +67,10 @@ async function main() {
     'Train MP4 is not the active source',
   )
   assert(
-    initial.spotifySrc.includes('37i9dQZF1DZ06evO2QBzaO'),
-    'Spotify default playlist mismatch',
+    initial.spotifyHref.includes('37i9dQZF1DZ06evO2QBzaO'),
+    'Spotify launch playlist mismatch',
   )
+  assert(initial.spotifyIframeCount === 0, 'Spotify iframe should be removed')
   assert(
     initial.youtubeSrc.includes('z23pnK_-0og'),
     'YouTube default video mismatch',
@@ -87,13 +89,26 @@ async function main() {
   assert(initial.spotifyForms === 0, 'Spotify widget still has block controls')
   assert(initial.particleCount === 0, 'Light particles should be removed')
   assert(!initial.spotifyTodoOverlap, 'Spotify and Todo widgets overlap')
-  assert(initial.visibleWidgets === 5, 'Expected five widgets to be visible')
+  assert(initial.visibleWidgets === 6, 'Expected six widgets to be visible')
+  assert(initial.notesWidgetCount === 1, 'Notes widget should be visible')
+  ;['Train', 'Oasis', 'Japan', 'Night Cosy'].forEach((label) => {
+    assert(initial.backgroundText.includes(label), `${label} background is missing`)
+  })
   assert(initial.ankiWidgetCount === 0, 'Anki widget should be removed')
   assert(!/anki|ankiconnect|anki-connect/i.test(initial.text), 'Anki copy should be removed')
   assert(
     !/lofi|twitch|music station|lofi girl|chatgpt/i.test(initial.text),
     'Forbidden lofi/twitch/chatgpt copy found',
   )
+
+  const spotifyPopupPromise = page.waitForEvent('popup')
+  await page.getByRole('link', { name: 'Open Spotify' }).click()
+  const spotifyPopup = await spotifyPopupPromise
+  assert(
+    spotifyPopup.url().includes('37i9dQZF1DZ06evO2QBzaO'),
+    'Spotify launcher did not open the Omar playlist',
+  )
+  await spotifyPopup.close()
 
   await page.locator('.settings-trigger').click()
   assert(
@@ -122,6 +137,25 @@ async function main() {
   )
   await page.getByLabel('Close settings').click()
   assert(await page.getByText('26:00').isVisible(), 'Focus minutes setting did not update timer')
+
+  await page.getByLabel('New note').click()
+  await page.getByLabel('Note title').fill('Arabic vocabulary')
+  await page.getByLabel('Note category').fill('Vocabulary')
+  await page.getByLabel('Note body').fill('Roots to revise')
+  await page.waitForFunction(() =>
+    localStorage.getItem('muslim-study-place:notes')?.includes('Arabic vocabulary'),
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  assert(
+    (await page.getByText('Arabic vocabulary').count()) >= 1,
+    'Created note did not persist after reload',
+  )
+  await page.getByLabel('Search notes').fill('roots')
+  assert(
+    (await page.getByText('Roots to revise').count()) >= 1,
+    'Notes search did not keep the matching note visible',
+  )
 
   await page.locator('.youtube-overlay').click()
   assert(
@@ -239,6 +273,27 @@ async function main() {
   )
   assert((await page.getByText('1/4').count()) >= 1, 'Pomodoro progress did not persist')
 
+  for (const background of [
+    { label: 'Oasis', src: 'arabic-oasis.png' },
+    { label: 'Japan', src: 'japan-garden.png' },
+    { label: 'Night Cosy', src: 'night-cosy.png' },
+  ]) {
+    await page
+      .locator('.background-row')
+      .filter({ hasText: background.label })
+      .locator('button')
+      .first()
+      .click()
+    await page.waitForFunction(
+      (src) =>
+        document
+          .querySelector('.background-media.is-image')
+          ?.getAttribute('src')
+          ?.includes(src),
+      background.src,
+    )
+  }
+
   await page.setInputFiles(
     '.upload-button input[type="file"]',
     path.resolve('public/favicon.svg'),
@@ -288,16 +343,29 @@ async function main() {
       tx.onerror = () => reject(tx.error)
     })
     db.close()
+    localStorage.setItem(
+      'muslim-study-place:selectedBackground',
+      JSON.stringify('upload-japan-test'),
+    )
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForTimeout(1000)
+  await page.waitForFunction(
+    () => localStorage.getItem('muslim-study-place:selectedBackground') === '"japan"',
+  )
   const builtInUploadState = await page.evaluate(() => ({
+    selected: localStorage.getItem('muslim-study-place:selectedBackground') || '',
     rowText: document.querySelector('.background-list')?.textContent || '',
+    imageSrc:
+      document.querySelector('.background-media.is-image')?.getAttribute('src') || '',
   }))
-  assert(builtInUploadState.rowText.includes('Japan'), 'Special local background was not renamed')
+  assert(builtInUploadState.selected === '"japan"', 'Legacy Japan upload was not migrated')
   assert(
-    builtInUploadState.rowText.includes('Japanbuilt-in'),
-    'Special local background was not marked built-in',
+    !builtInUploadState.rowText.includes('ChatGPT Image 7 juin'),
+    'Legacy local upload duplicate is still visible',
+  )
+  assert(
+    builtInUploadState.imageSrc.includes('japan-garden.png'),
+    'Migrated Japan background did not render',
   )
 
   await page.setViewportSize({ width: 390, height: 844 })

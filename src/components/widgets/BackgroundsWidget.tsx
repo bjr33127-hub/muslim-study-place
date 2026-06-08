@@ -1,4 +1,5 @@
 import { ImagePlus, Trash2, Upload } from 'lucide-react'
+import { publicPath } from '../../lib/publicPath'
 import type { BackgroundAsset } from '../../types/app'
 
 type BackgroundsWidgetProps = {
@@ -62,7 +63,7 @@ export function BackgroundsWidget({
         ))}
       </div>
       {uploadError ? <p className="form-error">{uploadError}</p> : null}
-      <a className="attribution-link" href="/ATTRIBUTION.md" target="_blank">
+      <a className="attribution-link" href={publicPath('ATTRIBUTION.md')} target="_blank">
         Train attribution
       </a>
     </div>

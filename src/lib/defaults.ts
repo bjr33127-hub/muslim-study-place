@@ -8,8 +8,8 @@ import type {
 } from '../types/app'
 import { publicPath } from './publicPath'
 
-export const SPOTIFY_DEFAULT_EMBED_URL =
-  'https://open.spotify.com/embed/playlist/37i9dQZF1DZ06evO2QBzaO'
+export const SPOTIFY_PLAYLIST_URL =
+  'https://open.spotify.com/playlist/37i9dQZF1DZ06evO2QBzaO'
 
 export const YOUTUBE_DEFAULT_VIDEO_ID = 'z23pnK_-0og'
 
@@ -27,6 +27,7 @@ export const BUILT_IN_BACKGROUNDS: BackgroundAsset[] = [
 export const WIDGET_ORDER: WidgetId[] = [
   'pomodoro',
   'todo',
+  'notes',
   'spotify',
   'youtube',
   'backgrounds',
@@ -50,6 +51,15 @@ export const DEFAULT_LAYOUTS: Record<WidgetId, WidgetLayout> = {
     height: 386,
     visible: true,
     z: 4,
+  },
+  notes: {
+    id: 'notes',
+    x: 108,
+    y: 370,
+    width: 360,
+    height: 420,
+    visible: true,
+    z: 7,
   },
   spotify: {
     id: 'spotify',
@@ -83,6 +93,7 @@ export const DEFAULT_LAYOUTS: Record<WidgetId, WidgetLayout> = {
 export const WIDGET_LABELS: Record<WidgetId, string> = {
   pomodoro: 'Focus Timer',
   todo: 'Todo',
+  notes: 'Notes',
   spotify: 'Spotify',
   youtube: 'YouTube',
   backgrounds: 'Backgrounds',

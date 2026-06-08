@@ -8,10 +8,12 @@ A cosy halal study dashboard inspired by Astrostation, rebuilt for Quran-first f
 - Floating desktop widgets with mobile stacking.
 - Pomodoro focus timer.
 - Persistent todo list with configurable pomodoro targets per task and task-level Start/Pause controls.
+- Persistent notes widget with categories, search, pinning, and autosave.
 - Configurable Pomodoro durations and long-break cadence.
 - Addictive focus flame streak plus best continuous pomodoro streak.
-- Spotify embed defaulting to `This Is Omar Bn DiaaAldeen`.
+- Spotify launcher for the `Omar Bn DiaaAldeen` playlist, opened in Spotify for full playback.
 - YouTube embed defaulting to Omar Bn DiaaAldeen, hidden behind a neutral load panel until clicked.
+- Built-in local backgrounds: Train, Oasis, Japan, and Night Cosy.
 - Background picker with local uploads stored in IndexedDB.
 - Folder background support through `public/backgrounds/manifest.json`.
 - Real settings panel with widget toggles, layout reset, background dimming, streak target, and Astrostation creator credit.

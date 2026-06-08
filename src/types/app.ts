@@ -1,6 +1,7 @@
 export type WidgetId =
   | 'pomodoro'
   | 'todo'
+  | 'notes'
   | 'spotify'
   | 'youtube'
   | 'backgrounds'
@@ -42,6 +43,16 @@ export type TodoItem = {
   requiredPomodoros: number
   completedPomodoros: number
   createdAt: number
+}
+
+export type NoteItem = {
+  id: string
+  title: string
+  body: string
+  category: string
+  pinned: boolean
+  createdAt: number
+  updatedAt: number
 }
 
 export type TimerMode = 'focus' | 'shortBreak' | 'longBreak'

@@ -1,34 +1,6 @@
-import { SPOTIFY_DEFAULT_EMBED_URL, YOUTUBE_DEFAULT_VIDEO_ID } from './defaults'
+import { YOUTUBE_DEFAULT_VIDEO_ID } from './defaults'
 
 const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/
-
-export function normalizeSpotifyEmbed(input: string) {
-  const trimmed = input.trim()
-
-  if (!trimmed) {
-    return SPOTIFY_DEFAULT_EMBED_URL
-  }
-
-  try {
-    const url = new URL(trimmed)
-
-    if (!url.hostname.includes('spotify.com')) {
-      return SPOTIFY_DEFAULT_EMBED_URL
-    }
-
-    const parts = url.pathname.split('/').filter(Boolean)
-    const embedParts = parts[0] === 'embed' ? parts.slice(1) : parts
-    const [kind, id] = embedParts
-
-    if (!kind || !id) {
-      return SPOTIFY_DEFAULT_EMBED_URL
-    }
-
-    return `https://open.spotify.com/embed/${kind}/${id}`
-  } catch {
-    return SPOTIFY_DEFAULT_EMBED_URL
-  }
-}
 
 export function normalizeYoutubeEmbed(input: string) {
   const trimmed = input.trim()

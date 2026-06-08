@@ -2,6 +2,7 @@ import {
   BookOpen,
   CheckSquare,
   Image,
+  NotebookPen,
   Timer,
   Video,
 } from 'lucide-react'
@@ -13,6 +14,7 @@ import { SettingsPanel } from './components/layout/SettingsPanel'
 import { TopBar } from './components/layout/TopBar'
 import { WidgetFrame } from './components/layout/WidgetFrame'
 import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
+import { NotesWidget } from './components/widgets/NotesWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
 import { SpotifyWidget } from './components/widgets/SpotifyWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
@@ -51,6 +53,7 @@ import type {
 const widgetIcons: Record<WidgetId, ReactNode> = {
   pomodoro: <Timer size={18} strokeWidth={1.8} />,
   todo: <CheckSquare size={18} strokeWidth={1.8} />,
+  notes: <NotebookPen size={18} strokeWidth={1.8} />,
   spotify: <BookOpen size={18} strokeWidth={1.8} />,
   youtube: <Video size={18} strokeWidth={1.8} />,
   backgrounds: <Image size={18} strokeWidth={1.8} />,
@@ -76,18 +79,14 @@ type FolderBackgroundEntry = Partial<BackgroundAsset> & {
   label: string
 }
 
-const LOCAL_BUILT_IN_BACKGROUND_LABELS: Record<string, string> = {
-  'ChatGPT Image 7 juin 2026, 10_39_12': 'Japan',
-  'ChatGPT Image 7 juin 2026, 10_39_26': 'nigh cosy',
-  'ChatGPT Image 7 juin 2026, 09_07_16': 'arabic oasis',
+const LEGACY_LOCAL_BACKGROUND_IDS: Record<string, string> = {
+  'ChatGPT Image 7 juin 2026, 09_07_16': 'oasis',
+  'ChatGPT Image 7 juin 2026, 10_39_12': 'japan',
+  'ChatGPT Image 7 juin 2026, 10_39_26': 'night-cosy',
 }
 
-function displayUploadedBackground(record: { label: string }) {
-  return LOCAL_BUILT_IN_BACKGROUND_LABELS[record.label] ?? record.label
-}
-
-function uploadedBackgroundSource(record: { label: string }): BackgroundAsset['source'] {
-  return record.label in LOCAL_BUILT_IN_BACKGROUND_LABELS ? 'built-in' : 'upload'
+function canonicalLegacyBackgroundId(label: string) {
+  return LEGACY_LOCAL_BACKGROUND_IDS[label] ?? ''
 }
 
 function normalizeFolderBackgrounds(data: unknown): BackgroundAsset[] {
@@ -115,7 +114,7 @@ function normalizeFolderBackgrounds(data: unknown): BackgroundAsset[] {
         label: candidate.label,
         kind,
         src,
-        source: 'folder' as const,
+        source: candidate.source === 'built-in' ? 'built-in' : 'folder',
         poster: candidate.poster,
         attribution: candidate.attribution,
       },
@@ -300,17 +299,35 @@ function App() {
           return
         }
 
-        const backgrounds = records.map((record) => {
+        const legacySelected = records.find(
+          (record) =>
+            record.id === selectedBackgroundId &&
+            canonicalLegacyBackgroundId(record.label),
+        )
+
+        if (legacySelected) {
+          setSelectedBackgroundId(
+            canonicalLegacyBackgroundId(legacySelected.label),
+          )
+        }
+
+        const backgrounds = records.flatMap((record) => {
+          if (canonicalLegacyBackgroundId(record.label)) {
+            return []
+          }
+
           const src = URL.createObjectURL(record.blob)
           objectUrls.push(src)
 
-          return {
-            id: record.id,
-            label: displayUploadedBackground(record),
-            kind: record.kind,
-            src,
-            source: uploadedBackgroundSource(record),
-          }
+          return [
+            {
+              id: record.id,
+              label: record.label,
+              kind: record.kind,
+              src,
+              source: 'upload' as const,
+            },
+          ]
         })
 
         setUploadedBackgrounds(backgrounds)
@@ -325,7 +342,7 @@ function App() {
       cancelled = true
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [uploadVersion])
+  }, [selectedBackgroundId, setSelectedBackgroundId, uploadVersion])
 
   const backgrounds = useMemo(
     () =>
@@ -806,6 +823,8 @@ function App() {
             onPauseTaskTimer={pauseTaskTimer}
           />
         )
+      case 'notes':
+        return <NotesWidget />
       case 'spotify':
         return <SpotifyWidget />
       case 'youtube':
@@ -859,7 +878,6 @@ function App() {
             onLayoutChange={updateLayout}
             onClose={() => hideWidget(id)}
             onFocus={() => focusWidget(id)}
-            bare={id === 'spotify'}
           >
             {renderWidget(id)}
           </WidgetFrame>

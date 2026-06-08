@@ -407,8 +407,45 @@ async function main() {
       background.src,
     )
   }
-  await page.waitForSelector('.magic-particles-canvas')
-  await page.waitForTimeout(800)
+  await page.waitForSelector('.magic-particles-canvas[data-particles-ready="true"]')
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('.magic-particles-canvas')
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return false
+    }
+
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+
+    if (!gl) {
+      return false
+    }
+
+    const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4)
+    let brightSamples = 0
+    let maxChannel = 0
+
+    gl.readPixels(
+      0,
+      0,
+      gl.drawingBufferWidth,
+      gl.drawingBufferHeight,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      pixels,
+    )
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const channel = Math.max(pixels[index], pixels[index + 1], pixels[index + 2])
+      maxChannel = Math.max(maxChannel, channel)
+
+      if (channel >= 60 || pixels[index + 3] >= 60) {
+        brightSamples += 1
+      }
+    }
+
+    return brightSamples > 650 && maxChannel >= 120
+  }, null, { timeout: 15000 })
   const magicParticlesState = await page.evaluate(() => {
     const canvas = document.querySelector('.magic-particles-canvas')
 
@@ -461,7 +498,7 @@ async function main() {
   await page.getByLabel('Magic particles').setChecked(false)
   await page.waitForFunction(() => !document.querySelector('.magic-particles-canvas'))
   await page.getByLabel('Magic particles').setChecked(true)
-  await page.waitForSelector('.magic-particles-canvas')
+  await page.waitForSelector('.magic-particles-canvas[data-particles-ready="true"]')
   await page.getByLabel('Close settings').click()
 
   await page.setInputFiles(
@@ -675,8 +712,45 @@ async function main() {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1000)
-  await page.waitForSelector('.magic-particles-canvas')
-  await page.waitForTimeout(600)
+  await page.waitForSelector('.magic-particles-canvas[data-particles-ready="true"]')
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('.magic-particles-canvas')
+
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return false
+    }
+
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+
+    if (!gl) {
+      return false
+    }
+
+    const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4)
+    let brightSamples = 0
+    let maxChannel = 0
+
+    gl.readPixels(
+      0,
+      0,
+      gl.drawingBufferWidth,
+      gl.drawingBufferHeight,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      pixels,
+    )
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const channel = Math.max(pixels[index], pixels[index + 1], pixels[index + 2])
+      maxChannel = Math.max(maxChannel, channel)
+
+      if (channel >= 60 || pixels[index + 3] >= 60) {
+        brightSamples += 1
+      }
+    }
+
+    return brightSamples > 240 && maxChannel >= 110
+  }, null, { timeout: 15000 })
   const mobile = await page.evaluate(() => ({
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     dockBottom: document.querySelector('.dock')?.getBoundingClientRect().bottom || 0,

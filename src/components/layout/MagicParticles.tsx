@@ -94,6 +94,8 @@ export function MagicParticles({ active, sceneKey }: MagicParticlesProps) {
       return
     }
 
+    canvas.removeAttribute('data-particles-ready')
+
     let cleanupScene = () => undefined
     let cancelled = false
 
@@ -164,6 +166,7 @@ export function MagicParticles({ active, sceneKey }: MagicParticlesProps) {
 
       resize()
       renderer.render(scene, camera)
+      canvas.dataset.particlesReady = 'true'
       animationFrame = window.requestAnimationFrame(render)
       window.addEventListener('resize', resize)
       reducedMotion.addEventListener('change', resetForMotionPreference)
@@ -176,6 +179,7 @@ export function MagicParticles({ active, sceneKey }: MagicParticlesProps) {
         geometry.dispose()
         material.dispose()
         renderer.dispose()
+        canvas.removeAttribute('data-particles-ready')
       }
     })
 

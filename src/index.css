@@ -119,11 +119,12 @@ a {
 .magic-particles-canvas {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 4;
   width: 100%;
   height: 100%;
-  opacity: 0.92;
+  opacity: 1;
   pointer-events: none;
+  filter: brightness(1.35) saturate(1.12);
   mix-blend-mode: screen;
 }
 
@@ -1054,6 +1055,13 @@ a {
   color: var(--text);
   border: 1px solid rgba(217, 182, 108, 0.28);
   background: rgba(79, 143, 98, 0.28);
+}
+
+.primary-action:disabled,
+.ghost-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+  filter: grayscale(0.22);
 }
 
 .goal-stepper {

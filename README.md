@@ -7,7 +7,7 @@ A cosy halal study dashboard inspired by Astrostation, rebuilt for Quran-first f
 - Exact Astrostation train background video as the default animated background.
 - Floating desktop widgets with mobile stacking.
 - Pomodoro focus timer.
-- Finished state with a small star animation when the current pomodoro objective is complete.
+- Finished state with a small star animation, audible chime, and full stop when the current pomodoro objective is complete.
 - Persistent todo list with configurable pomodoro targets per task and task-level Start/Pause controls.
 - Persistent notes widget with categories, search, pinning, and autosave.
 - Configurable Pomodoro durations and long-break cadence.
@@ -15,7 +15,7 @@ A cosy halal study dashboard inspired by Astrostation, rebuilt for Quran-first f
 - Spotify launcher for the `Omar Bn DiaaAldeen` playlist, opened in Spotify for full playback.
 - YouTube embed defaulting to Omar Bn DiaaAldeen, hidden behind a neutral load panel until clicked.
 - Built-in local backgrounds: Train, Oasis, Japan, and Night Cosy.
-- Optional WebGL magic dust particles on image backgrounds.
+- Optional bright WebGL magic dust particles on image backgrounds.
 - Background picker with local uploads stored in IndexedDB.
 - Folder background support through `public/backgrounds/manifest.json`.
 - Real settings panel with widget toggles, layout reset, background dimming, streak target, and Astrostation creator credit.

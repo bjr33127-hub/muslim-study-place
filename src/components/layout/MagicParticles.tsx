@@ -36,17 +36,17 @@ void main() {
   float glow = smoothstep(0.5, 0.0, dist);
   float core = smoothstep(0.14, 0.0, dist);
   float cross = max(
-    smoothstep(0.028, 0.0, abs(uv.x)) * smoothstep(0.42, 0.0, abs(uv.y)),
-    smoothstep(0.028, 0.0, abs(uv.y)) * smoothstep(0.42, 0.0, abs(uv.x))
+    smoothstep(0.035, 0.0, abs(uv.x)) * smoothstep(0.44, 0.0, abs(uv.y)),
+    smoothstep(0.035, 0.0, abs(uv.y)) * smoothstep(0.44, 0.0, abs(uv.x))
   );
   vec3 warmGold = vec3(1.0, 0.78, 0.34);
   vec3 softGreen = vec3(0.55, 0.95, 0.62);
-  vec3 moonBlue = vec3(0.58, 0.72, 1.0);
+  vec3 moonBlue = vec3(0.68, 0.82, 1.0);
   vec3 color = mix(warmGold, softGreen, smoothstep(0.32, 0.82, fract(vSeed * 7.1)));
   color = mix(color, moonBlue, 0.18 * smoothstep(0.74, 1.0, fract(vSeed * 3.7)));
-  float alpha = (glow * 0.34 + core * 0.74 + cross * 0.24) * vPulse;
+  float alpha = (glow * 0.62 + core * 0.96 + cross * 0.42) * (0.72 + vPulse * 0.42);
 
-  if (alpha < 0.015) {
+  if (alpha < 0.012) {
     discard;
   }
 
@@ -56,14 +56,14 @@ void main() {
 
 function particleCount(width: number) {
   if (width < 520) {
-    return 96
+    return 150
   }
 
   if (width < 900) {
-    return 138
+    return 220
   }
 
-  return 184
+  return 320
 }
 
 function fillParticleAttributes(
@@ -78,8 +78,8 @@ function fillParticleAttributes(
     positions[index * 3 + 1] = Math.random() * 2.5 - 1.25
     positions[index * 3 + 2] = 0
     seeds[index] = seed
-    sizes[index] = 3.8 + Math.random() * 11.5
-    speeds[index] = 0.014 + Math.random() * 0.032
+    sizes[index] = 6 + Math.random() * 18
+    speeds[index] = 0.012 + Math.random() * 0.035
   }
 }
 

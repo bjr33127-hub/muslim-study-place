@@ -12,6 +12,8 @@ const TIMER_LABELS: Record<TimerMode, string> = {
   longBreak: 'Long break',
 }
 
+const TIMER_BEEP_PEAK_GAIN = 0.16
+
 function formatTime(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
@@ -19,6 +21,39 @@ function formatTime(seconds: number) {
     2,
     '0',
   )}`
+}
+
+function scheduleTimerChime(context: AudioContext) {
+  const start = context.currentTime + 0.02
+  const master = context.createGain()
+  const tones = [
+    { frequency: 720, delay: 0, duration: 0.22 },
+    { frequency: 920, delay: 0.18, duration: 0.28 },
+  ]
+
+  master.gain.setValueAtTime(0.0001, start)
+  master.gain.exponentialRampToValueAtTime(TIMER_BEEP_PEAK_GAIN, start + 0.035)
+  master.gain.exponentialRampToValueAtTime(0.0001, start + 0.62)
+  master.connect(context.destination)
+
+  tones.forEach((tone, index) => {
+    const oscillator = context.createOscillator()
+    const toneStart = start + tone.delay
+
+    oscillator.type = index === 0 ? 'sine' : 'triangle'
+    oscillator.frequency.setValueAtTime(tone.frequency, toneStart)
+    oscillator.connect(master)
+    oscillator.start(toneStart)
+    oscillator.stop(toneStart + tone.duration)
+
+    oscillator.onended = () => {
+      oscillator.disconnect()
+
+      if (index === tones.length - 1) {
+        master.disconnect()
+      }
+    }
+  })
 }
 
 type PomodoroWidgetProps = {
@@ -90,35 +125,24 @@ export function PomodoroWidget({
   const playTimerBeep = useCallback(() => {
     const now = Date.now()
 
-    if (now - lastBeepAtRef.current < 450) {
+    if (now - lastBeepAtRef.current < 700) {
       return
     }
 
     const context = getAudioContext()
 
-    if (!context) {
+    if (!context || context.state === 'closed') {
       return
     }
 
     lastBeepAtRef.current = now
 
     if (context.state === 'suspended') {
-      void context.resume().catch(() => undefined)
+      void context.resume().then(() => scheduleTimerChime(context)).catch(() => undefined)
+      return
     }
 
-    const start = context.currentTime
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-
-    oscillator.type = 'sine'
-    oscillator.frequency.setValueAtTime(720, start)
-    gain.gain.setValueAtTime(0.0001, start)
-    gain.gain.exponentialRampToValueAtTime(0.045, start + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16)
-    oscillator.connect(gain)
-    gain.connect(context.destination)
-    oscillator.start(start)
-    oscillator.stop(start + 0.18)
+    scheduleTimerChime(context)
   }, [getAudioContext])
 
   const interruptRun = () => {
@@ -146,6 +170,32 @@ export function PomodoroWidget({
   }, [primeTimerBeep])
 
   useEffect(() => {
+    if (!objectiveFinished) {
+      return
+    }
+
+    if (mode !== 'focus') {
+      onModeChange('focus')
+    }
+
+    if (remaining !== 0) {
+      onRemainingChange(0)
+    }
+
+    if (isRunning) {
+      onRunningChange(false)
+    }
+  }, [
+    isRunning,
+    mode,
+    objectiveFinished,
+    onModeChange,
+    onRemainingChange,
+    onRunningChange,
+    remaining,
+  ])
+
+  useEffect(() => {
     if (!isRunning) {
       return
     }
@@ -163,6 +213,7 @@ export function PomodoroWidget({
           onFocusComplete()
           const nextRunCount = run.currentRun + 1
           const nextCompleted = Math.min(run.completedInTarget + 1, target)
+          const objectiveComplete = nextCompleted >= target
           onRunChange({
             ...run,
             targetPomodoros: target,
@@ -172,6 +223,12 @@ export function PomodoroWidget({
             lastStarAt: Date.now(),
             completedInTarget: nextCompleted,
           })
+
+          if (objectiveComplete) {
+            onRunningChange(false)
+            return 0
+          }
+
           switchMode(
             nextRunCount % longBreakEvery === 0 ? 'longBreak' : 'shortBreak',
             run.autoCycle,
@@ -192,6 +249,7 @@ export function PomodoroWidget({
     onFocusComplete,
     onRemainingChange,
     onRunChange,
+    onRunningChange,
     playTimerBeep,
     run,
     switchMode,
@@ -207,6 +265,10 @@ export function PomodoroWidget({
     if (isRunning) {
       interruptRun()
       onRunningChange(false)
+      return
+    }
+
+    if (objectiveFinished) {
       return
     }
 
@@ -305,7 +367,12 @@ export function PomodoroWidget({
       </label>
 
       <div className="timer-actions">
-        <button className="primary-action" type="button" onClick={startOrPause}>
+        <button
+          className="primary-action"
+          type="button"
+          onClick={startOrPause}
+          disabled={objectiveFinished && !isRunning}
+        >
           {isRunning ? (
             <Pause size={17} strokeWidth={1.9} />
           ) : (

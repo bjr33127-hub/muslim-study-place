@@ -12,6 +12,100 @@ function assert(condition, message) {
 async function main() {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+  await context.addInitScript(() => {
+    const audioEvents = {
+      gainTargets: [],
+      oscillators: [],
+      resumes: 0,
+    }
+
+    class FakeAudioParam {
+      setValueAtTime(value, time) {
+        audioEvents.gainTargets.push({ method: 'set', value, time })
+      }
+
+      exponentialRampToValueAtTime(value, time) {
+        audioEvents.gainTargets.push({ method: 'ramp', value, time })
+      }
+    }
+
+    class FakeGain {
+      constructor() {
+        this.gain = new FakeAudioParam()
+      }
+
+      connect() {
+        return this
+      }
+
+      disconnect() {
+        return undefined
+      }
+    }
+
+    class FakeOscillator {
+      constructor() {
+        this.frequency = new FakeAudioParam()
+        this.type = 'sine'
+        this.onended = null
+      }
+
+      connect() {
+        return this
+      }
+
+      disconnect() {
+        return undefined
+      }
+
+      start(time) {
+        audioEvents.oscillators.push({ event: 'start', type: this.type, time })
+      }
+
+      stop(time) {
+        audioEvents.oscillators.push({ event: 'stop', type: this.type, time })
+
+        if (this.onended) {
+          window.setTimeout(() => this.onended(), 0)
+        }
+      }
+    }
+
+    class FakeAudioContext {
+      constructor() {
+        this.currentTime = 0
+        this.destination = {}
+        this.state = 'running'
+      }
+
+      createGain() {
+        return new FakeGain()
+      }
+
+      createOscillator() {
+        return new FakeOscillator()
+      }
+
+      resume() {
+        audioEvents.resumes += 1
+        this.state = 'running'
+        return Promise.resolve()
+      }
+    }
+
+    Object.defineProperty(window, '__mspAudioEvents', {
+      configurable: true,
+      value: audioEvents,
+    })
+    Object.defineProperty(window, 'AudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    })
+    Object.defineProperty(window, 'webkitAudioContext', {
+      configurable: true,
+      value: FakeAudioContext,
+    })
+  })
   const page = await context.newPage()
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
@@ -256,6 +350,18 @@ async function main() {
   await page.waitForFunction(() =>
     localStorage.getItem('muslim-study-place:todos')?.includes('"completedPomodoros":1'),
   )
+  const firstFocusAudioState = await page.evaluate(() => {
+    const events = window.__mspAudioEvents
+    const gainValues = events?.gainTargets?.map((event) => event.value) ?? []
+
+    return {
+      maxGain: gainValues.length ? Math.max(...gainValues) : 0,
+      starts:
+        events?.oscillators?.filter((event) => event.event === 'start').length ?? 0,
+    }
+  })
+  assert(firstFocusAudioState.starts >= 2, 'Focus completion did not trigger audio')
+  assert(firstFocusAudioState.maxGain >= 0.15, 'Focus completion audio is too quiet')
   const autoCycleState = await page.evaluate(() => ({
     mode: localStorage.getItem('muslim-study-place:timer:mode'),
     running: localStorage.getItem('muslim-study-place:timer:running'),
@@ -307,36 +413,49 @@ async function main() {
     const canvas = document.querySelector('.magic-particles-canvas')
 
     if (!(canvas instanceof HTMLCanvasElement)) {
-      return { canvasCount: 0, litSamples: 0 }
+      return { canvasCount: 0, litSamples: 0, brightSamples: 0, maxChannel: 0 }
     }
 
     const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
 
     if (!gl) {
-      return { canvasCount: 1, litSamples: 0 }
+      return { canvasCount: 1, litSamples: 0, brightSamples: 0, maxChannel: 0 }
     }
 
     const width = gl.drawingBufferWidth
     const height = gl.drawingBufferHeight
     const pixels = new Uint8Array(width * height * 4)
     let litSamples = 0
+    let brightSamples = 0
+    let maxChannel = 0
 
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
 
     for (let index = 0; index < pixels.length; index += 4) {
-      if (pixels[index] || pixels[index + 1] || pixels[index + 2] || pixels[index + 3]) {
-        litSamples += 1
+      const channel = Math.max(pixels[index], pixels[index + 1], pixels[index + 2])
+      maxChannel = Math.max(maxChannel, channel)
 
-        if (litSamples > 4) {
-          break
-        }
+      if (channel || pixels[index + 3]) {
+        litSamples += 1
+      }
+
+      if (channel >= 60 || pixels[index + 3] >= 60) {
+        brightSamples += 1
       }
     }
 
-    return { canvasCount: 1, litSamples }
+    return { canvasCount: 1, litSamples, brightSamples, maxChannel }
   })
   assert(magicParticlesState.canvasCount === 1, 'Magic particle canvas missing')
   assert(magicParticlesState.litSamples > 0, 'Magic particle canvas is blank')
+  assert(
+    magicParticlesState.brightSamples > 650,
+    'Magic particles are too faint on desktop',
+  )
+  assert(
+    magicParticlesState.maxChannel >= 120,
+    'Magic particles do not reach a visible brightness',
+  )
 
   await page.locator('.settings-trigger').click()
   await page.getByLabel('Magic particles').setChecked(false)
@@ -439,7 +558,7 @@ async function main() {
         bestRun: 0,
         totalStars: 0,
         lastStarAt: 0,
-        autoCycle: false,
+        autoCycle: true,
       }),
     )
   })
@@ -451,6 +570,107 @@ async function main() {
     await page.locator('.finished-banner').getByText('Finished!').isVisible(),
     'Pomodoro finished banner did not appear',
   )
+  const finishedState = await page.evaluate(() => {
+    const events = window.__mspAudioEvents
+    const gainValues = events?.gainTargets?.map((event) => event.value) ?? []
+
+    return {
+      mode: localStorage.getItem('muslim-study-place:timer:mode'),
+      remaining: localStorage.getItem('muslim-study-place:timer:remaining'),
+      running: localStorage.getItem('muslim-study-place:timer:running'),
+      maxGain: gainValues.length ? Math.max(...gainValues) : 0,
+      starts:
+        events?.oscillators?.filter((event) => event.event === 'start').length ?? 0,
+    }
+  })
+  assert(finishedState.running === 'false', 'Finished pomodoro kept running')
+  assert(finishedState.mode === '"focus"', 'Finished pomodoro changed mode')
+  assert(finishedState.remaining === '0', 'Finished pomodoro did not stop at 00:00')
+  assert(finishedState.starts >= 2, 'Finished focus did not trigger audio')
+  assert(finishedState.maxGain >= 0.15, 'Finished focus audio is too quiet')
+  assert(
+    await page.locator('.pomodoro-widget').getByRole('button', { name: 'Start' }).isDisabled(),
+    'Finished pomodoro can be restarted without reset',
+  )
+
+  await page.evaluate(() => {
+    localStorage.setItem('muslim-study-place:todos', '[]')
+    localStorage.setItem('muslim-study-place:timer:remaining', '42')
+    localStorage.setItem('muslim-study-place:timer:mode', '"shortBreak"')
+    localStorage.setItem('muslim-study-place:timer:running', 'true')
+    localStorage.setItem(
+      'muslim-study-place:pomodoroRun',
+      JSON.stringify({
+        targetPomodoros: 1,
+        completedInTarget: 1,
+        currentRun: 1,
+        bestRun: 1,
+        totalStars: 1,
+        lastStarAt: Date.now(),
+        autoCycle: true,
+      }),
+    )
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  const normalizedFinishedState = await page.evaluate(() => ({
+    mode: localStorage.getItem('muslim-study-place:timer:mode'),
+    remaining: localStorage.getItem('muslim-study-place:timer:remaining'),
+    running: localStorage.getItem('muslim-study-place:timer:running'),
+    finishedVisible: Boolean(document.querySelector('.finished-banner')),
+  }))
+  assert(normalizedFinishedState.finishedVisible, 'Stale finished state lost banner')
+  assert(
+    normalizedFinishedState.running === 'false',
+    'Stale finished state kept timer running',
+  )
+  assert(
+    normalizedFinishedState.mode === '"focus"',
+    'Stale finished state did not normalize mode',
+  )
+  assert(
+    normalizedFinishedState.remaining === '0',
+    'Stale finished state did not normalize remaining time',
+  )
+
+  await page.evaluate(() => {
+    localStorage.setItem('muslim-study-place:todos', '[]')
+    localStorage.setItem('muslim-study-place:timer:remaining', '1')
+    localStorage.setItem('muslim-study-place:timer:mode', '"shortBreak"')
+    localStorage.setItem('muslim-study-place:timer:running', 'false')
+    localStorage.setItem(
+      'muslim-study-place:pomodoroRun',
+      JSON.stringify({
+        targetPomodoros: 3,
+        completedInTarget: 1,
+        currentRun: 1,
+        bestRun: 1,
+        totalStars: 1,
+        lastStarAt: Date.now(),
+        autoCycle: false,
+      }),
+    )
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  await page.locator('.pomodoro-widget').getByRole('button', { name: 'Start' }).click()
+  await page.waitForTimeout(1800)
+  const shortBreakAudioState = await page.evaluate(() => {
+    const events = window.__mspAudioEvents
+    const gainValues = events?.gainTargets?.map((event) => event.value) ?? []
+
+    return {
+      mode: localStorage.getItem('muslim-study-place:timer:mode'),
+      running: localStorage.getItem('muslim-study-place:timer:running'),
+      maxGain: gainValues.length ? Math.max(...gainValues) : 0,
+      starts:
+        events?.oscillators?.filter((event) => event.event === 'start').length ?? 0,
+    }
+  })
+  assert(shortBreakAudioState.mode === '"focus"', 'Break completion did not return to focus')
+  assert(shortBreakAudioState.running === 'false', 'Break completion ignored auto-cycle off')
+  assert(shortBreakAudioState.starts >= 2, 'Break completion did not trigger audio')
+  assert(shortBreakAudioState.maxGain >= 0.15, 'Break completion audio is too quiet')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
@@ -463,21 +683,23 @@ async function main() {
     firstWidgetTop:
       document.querySelector('.widget-frame')?.getBoundingClientRect().top || 0,
     magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
-    magicParticleLitSamples: (() => {
+    magicParticleMetrics: (() => {
       const canvas = document.querySelector('.magic-particles-canvas')
 
       if (!(canvas instanceof HTMLCanvasElement)) {
-        return 0
+        return { litSamples: 0, brightSamples: 0, maxChannel: 0 }
       }
 
       const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
 
       if (!gl) {
-        return 0
+        return { litSamples: 0, brightSamples: 0, maxChannel: 0 }
       }
 
       const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4)
       let litSamples = 0
+      let brightSamples = 0
+      let maxChannel = 0
 
       gl.readPixels(
         0,
@@ -490,22 +712,33 @@ async function main() {
       )
 
       for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index] || pixels[index + 1] || pixels[index + 2] || pixels[index + 3]) {
-          litSamples += 1
+        const channel = Math.max(pixels[index], pixels[index + 1], pixels[index + 2])
+        maxChannel = Math.max(maxChannel, channel)
 
-          if (litSamples > 4) {
-            break
-          }
+        if (channel || pixels[index + 3]) {
+          litSamples += 1
+        }
+
+        if (channel >= 60 || pixels[index + 3] >= 60) {
+          brightSamples += 1
         }
       }
 
-      return litSamples
+      return { litSamples, brightSamples, maxChannel }
     })(),
   }))
   assert(mobile.noHorizontalOverflow, 'Mobile layout has horizontal overflow')
   assert(mobile.dockBottom < mobile.firstWidgetTop, 'Mobile dock overlaps first widget')
   assert(mobile.magicParticleCanvasCount === 1, 'Mobile magic particles are missing')
-  assert(mobile.magicParticleLitSamples > 0, 'Mobile magic particles are blank')
+  assert(mobile.magicParticleMetrics.litSamples > 0, 'Mobile magic particles are blank')
+  assert(
+    mobile.magicParticleMetrics.brightSamples > 240,
+    'Mobile magic particles are too faint',
+  )
+  assert(
+    mobile.magicParticleMetrics.maxChannel >= 110,
+    'Mobile magic particles do not reach a visible brightness',
+  )
 
   await browser.close()
   console.log(JSON.stringify({ status: 'ok', initial, mobile }, null, 2))

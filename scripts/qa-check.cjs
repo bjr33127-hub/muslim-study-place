@@ -352,6 +352,12 @@ async function main() {
   await page.waitForFunction(
     () => localStorage.getItem('muslim-study-place:selectedBackground') === '"japan"',
   )
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.background-media.is-image')
+      ?.getAttribute('src')
+      ?.includes('japan-garden.png'),
+  )
   const builtInUploadState = await page.evaluate(() => ({
     selected: localStorage.getItem('muslim-study-place:selectedBackground') || '',
     rowText: document.querySelector('.background-list')?.textContent || '',

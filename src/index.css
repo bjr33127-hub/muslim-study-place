@@ -450,6 +450,53 @@ a {
   }
 }
 
+@keyframes quran-liquid-flow {
+  from {
+    transform: translate3d(-4%, 0, 0) scaleX(1);
+  }
+
+  to {
+    transform: translate3d(5%, -7px, 0) scaleX(1.05);
+  }
+}
+
+@keyframes quran-mark-wave {
+  0%,
+  100% {
+    transform: translateY(4px) rotate(-2deg);
+  }
+
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+
+@keyframes quran-wave-idle {
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scaleY(0.38);
+  }
+
+  50% {
+    opacity: 0.88;
+    transform: scaleY(0.7);
+  }
+}
+
+@keyframes quran-wave-playing {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scaleY(0.36);
+  }
+
+  42% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
 .settings-panel {
   position: fixed;
   top: 66px;
@@ -738,6 +785,7 @@ a {
 .todo-widget,
 .media-widget,
 .notes-widget,
+.quran-player-widget,
 .spotify-widget,
 .backgrounds-widget {
   display: flex;
@@ -1604,6 +1652,302 @@ a {
   padding: 0 16px;
 }
 
+.quran-player-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+  color: var(--text);
+}
+
+.quran-liquid-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  overflow: hidden;
+  min-height: 94px;
+  padding: 12px;
+  border: 1px solid rgba(217, 182, 108, 0.2);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(79, 143, 98, 0.22), rgba(217, 182, 108, 0.12)),
+    rgba(6, 10, 9, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 16px 42px rgba(0, 0, 0, 0.22);
+}
+
+.quran-liquid-stage::after {
+  position: absolute;
+  inset: auto -18% -60% -18%;
+  height: 88px;
+  content: "";
+  background:
+    radial-gradient(ellipse at 24% 0%, rgba(217, 182, 108, 0.38), transparent 54%),
+    radial-gradient(ellipse at 74% 30%, rgba(79, 143, 98, 0.34), transparent 58%);
+  filter: blur(12px);
+  transform: translate3d(0, 0, 0);
+  animation: quran-liquid-flow 7s ease-in-out infinite alternate;
+}
+
+.quran-liquid-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 62px;
+  height: 62px;
+  border: 1px solid rgba(217, 182, 108, 0.34);
+  border-radius: 18px;
+  color: var(--gold);
+  background:
+    linear-gradient(145deg, rgba(245, 208, 125, 0.16), rgba(79, 143, 98, 0.22)),
+    rgba(8, 12, 11, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 0 26px rgba(217, 182, 108, 0.2);
+}
+
+.quran-liquid-mark span {
+  position: absolute;
+  inset: auto -10% -42% -10%;
+  height: 42px;
+  background: linear-gradient(90deg, rgba(79, 143, 98, 0.34), rgba(217, 182, 108, 0.42));
+  border-radius: 50% 50% 0 0;
+  animation: quran-mark-wave 5s ease-in-out infinite;
+}
+
+.quran-liquid-mark svg {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 0 10px rgba(217, 182, 108, 0.48));
+}
+
+.quran-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.quran-copy p,
+.quran-copy span,
+.quran-recitation-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quran-copy p {
+  margin: 0 0 2px;
+  font-weight: 740;
+  text-transform: uppercase;
+}
+
+.quran-copy h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.12;
+}
+
+.quran-copy strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--gold);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quran-audio-element {
+  display: none;
+}
+
+.quran-wave-panel {
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+  min-height: 122px;
+  padding: 12px;
+  border: 1px solid rgba(222, 211, 178, 0.16);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(145deg, rgba(7, 12, 10, 0.86), rgba(21, 31, 26, 0.72)),
+    rgba(0, 0, 0, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.quran-wave-bars {
+  display: grid;
+  grid-template-columns: repeat(18, 1fr);
+  align-items: end;
+  gap: 4px;
+  min-height: 56px;
+}
+
+.quran-wave-bars span {
+  display: block;
+  min-height: 12px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(245, 221, 145, 0.95), rgba(79, 143, 98, 0.62)),
+    rgba(217, 182, 108, 0.72);
+  box-shadow: 0 0 14px rgba(217, 182, 108, 0.2);
+  transform-origin: bottom;
+  animation: quran-wave-idle 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--bar) * -90ms);
+}
+
+.quran-player-widget[data-player-state="playing"] .quran-wave-bars span {
+  animation-name: quran-wave-playing;
+}
+
+.quran-wave-panel input {
+  width: 100%;
+  accent-color: var(--gold);
+}
+
+.quran-time-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quran-time-row strong {
+  overflow: hidden;
+  color: var(--gold);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quran-controls {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px minmax(96px, 128px);
+  gap: 8px;
+  align-items: center;
+}
+
+.quran-controls button,
+.quran-volume {
+  min-height: 38px;
+  border: 1px solid rgba(217, 182, 108, 0.23);
+  border-radius: var(--radius);
+  color: var(--text);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(79, 143, 98, 0.12)),
+    rgba(7, 10, 9, 0.55);
+}
+
+.quran-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.quran-controls button:hover {
+  border-color: rgba(217, 182, 108, 0.5);
+  background:
+    linear-gradient(145deg, rgba(217, 182, 108, 0.22), rgba(79, 143, 98, 0.2)),
+    rgba(7, 10, 9, 0.64);
+}
+
+.quran-play-button {
+  color: #07100b !important;
+  background: linear-gradient(180deg, #f2d583, #bc9141) !important;
+  font-weight: 760;
+  box-shadow: 0 0 18px rgba(217, 182, 108, 0.22);
+}
+
+.quran-play-button:disabled {
+  cursor: progress;
+  opacity: 0.62;
+}
+
+.quran-volume {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  color: var(--gold);
+}
+
+.quran-volume input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--gold);
+}
+
+.quran-recitation-list {
+  display: grid;
+  gap: 7px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.quran-recitation-list button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid rgba(222, 211, 178, 0.13);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.045);
+  text-align: left;
+  cursor: pointer;
+}
+
+.quran-recitation-list button.is-selected {
+  border-color: rgba(217, 182, 108, 0.52);
+  background:
+    linear-gradient(90deg, rgba(217, 182, 108, 0.2), rgba(79, 143, 98, 0.13)),
+    rgba(255, 255, 255, 0.06);
+}
+
+.quran-recitation-list button svg {
+  color: var(--gold);
+}
+
+.quran-recitation-list span {
+  display: grid;
+  min-width: 0;
+}
+
+.quran-recitation-list strong,
+.quran-recitation-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quran-source-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration-color: rgba(217, 182, 108, 0.45);
+}
+
+.quran-player-error {
+  margin: -3px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .youtube-shell {
   width: 100%;
   flex: 1;
@@ -1751,7 +2095,10 @@ a {
   .star-row svg.is-new,
   .finished-banner,
   .finished-banner::after,
-  .finished-banner svg {
+  .finished-banner svg,
+  .quran-liquid-stage::after,
+  .quran-liquid-mark span,
+  .quran-wave-bars span {
     animation: none;
   }
 
@@ -1851,6 +2198,10 @@ a {
 
   .widget-frame-spotify {
     min-height: 260px;
+  }
+
+  .widget-frame-quran {
+    min-height: 540px;
   }
 
   .widget-frame-notes {

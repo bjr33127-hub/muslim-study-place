@@ -26,6 +26,7 @@ export const BUILT_IN_BACKGROUNDS: BackgroundAsset[] = [
 
 export const WIDGET_ORDER: WidgetId[] = [
   'pomodoro',
+  'quran',
   'todo',
   'notes',
   'spotify',
@@ -61,22 +62,31 @@ export const DEFAULT_LAYOUTS: Record<WidgetId, WidgetLayout> = {
     visible: true,
     z: 7,
   },
-  spotify: {
-    id: 'spotify',
+  quran: {
+    id: 'quran',
     x: 500,
     y: 78,
     width: 420,
-    height: 352,
+    height: 500,
+    visible: true,
+    z: 8,
+  },
+  spotify: {
+    id: 'spotify',
+    x: 500,
+    y: 620,
+    width: 420,
+    height: 260,
     visible: true,
     z: 2,
   },
   youtube: {
     id: 'youtube',
     x: 500,
-    y: 506,
+    y: 900,
     width: 420,
     height: 360,
-    visible: true,
+    visible: false,
     z: 5,
   },
   backgrounds: {
@@ -94,6 +104,7 @@ export const WIDGET_LABELS: Record<WidgetId, string> = {
   pomodoro: 'Focus Timer',
   todo: 'Todo',
   notes: 'Notes',
+  quran: 'Quran',
   spotify: 'Spotify',
   youtube: 'YouTube',
   backgrounds: 'Backgrounds',

@@ -119,6 +119,15 @@ async function main() {
     spotifyHref:
       document.querySelector('.spotify-open-link')?.getAttribute('href') || '',
     spotifyIframeCount: document.querySelectorAll('.widget-frame-spotify iframe').length,
+    quranAudioSrc:
+      document
+        .querySelector('audio.quran-audio-element')
+        ?.getAttribute('src') || '',
+    quranText: document.querySelector('.widget-frame-quran')?.textContent || '',
+    quranPlayerState:
+      document.querySelector('.quran-player-widget')?.getAttribute('data-player-state') ||
+      '',
+    quranFrameCount: document.querySelectorAll('iframe[title="Quran recitation player"]').length,
     youtubeSrc:
       document
         .querySelector('iframe[title="YouTube Quran player"]')
@@ -132,6 +141,8 @@ async function main() {
     totalStarsText: document.querySelector('.total-stars-counter')?.textContent || '',
     chainText: document.querySelector('.pomodoro-chain')?.textContent || '',
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
+    quranWidgetCount: document.querySelectorAll('.widget-frame-quran').length,
+    youtubeDockButtonCount: document.querySelectorAll('button[aria-label="YouTube"]').length,
     notesWidgetCount: document.querySelectorAll('.widget-frame-notes').length,
     spotifyForms: document.querySelectorAll('.widget-frame-spotify .url-form').length,
     particleCount: document.querySelectorAll('.background-light-particles span').length,
@@ -168,13 +179,18 @@ async function main() {
   )
   assert(initial.spotifyIframeCount === 0, 'Spotify iframe should be removed')
   assert(
-    initial.youtubeSrc.includes('z23pnK_-0og'),
-    'YouTube default video mismatch',
+    initial.quranAudioSrc.includes('archive.org/download/20240229_20240229_1756') &&
+      initial.quranAudioSrc.includes('.mp3'),
+    'Quran player audio source mismatch',
   )
   assert(
-    initial.youtubeOverlay.includes('Load YouTube'),
-    'YouTube neutral overlay missing',
+    initial.quranText.includes('Omar Diaa Aldeen') &&
+      initial.quranText.includes('Al-Baqarah'),
+    'Quran player copy missing',
   )
+  assert(initial.quranFrameCount === 0, 'Quran player should not use a video iframe')
+  assert(initial.youtubeSrc === '', 'Legacy YouTube widget should be hidden by default')
+  assert(initial.youtubeDockButtonCount === 1, 'YouTube dock toggle should remain available')
   assert(initial.brandLockup === '', 'Top-left brand block is still present')
   assert(initial.chatWidgetCount === 0, 'ChatGPT widget should be removed')
   assert(initial.settingsButtonCount === 1, 'Settings trigger missing')
@@ -188,6 +204,7 @@ async function main() {
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
   assert(!initial.spotifyTodoOverlap, 'Spotify and Todo widgets overlap')
   assert(initial.visibleWidgets === 6, 'Expected six widgets to be visible')
+  assert(initial.quranWidgetCount === 1, 'Quran widget should be visible')
   assert(initial.notesWidgetCount === 1, 'Notes widget should be visible')
   ;['Train', 'Oasis', 'Japan', 'Night Cosy'].forEach((label) => {
     assert(initial.backgroundText.includes(label), `${label} background is missing`)
@@ -207,6 +224,35 @@ async function main() {
     'Spotify launcher did not open the Omar playlist',
   )
   await spotifyPopup.close()
+
+  await page.waitForSelector('audio.quran-audio-element', { state: 'attached' })
+  await page.getByLabel('Play Quran recitation').click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.quran-player-widget')
+        ?.getAttribute('data-player-state') === 'playing',
+  )
+  assert(
+    await page.getByLabel('Pause Quran recitation').isVisible(),
+    'Quran play button did not enter pause state',
+  )
+  await page
+    .locator('.quran-recitation-list button')
+    .filter({ hasText: 'Yusuf' })
+    .click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('audio.quran-audio-element')
+      ?.getAttribute('src')
+      ?.includes('Surah%20Yusuf.mp3'),
+  )
+  assert(
+    (await page.locator('.quran-recitation-list button.is-selected').filter({
+      hasText: 'Yusuf',
+    }).count()) === 1,
+    'Quran recitation selection did not update',
+  )
 
   await page.locator('.settings-trigger').click()
   assert(
@@ -257,12 +303,6 @@ async function main() {
   assert(
     (await page.getByText('Roots to revise').count()) >= 1,
     'Notes search did not keep the matching note visible',
-  )
-
-  await page.locator('.youtube-overlay').click()
-  assert(
-    (await page.locator('.youtube-overlay').count()) === 0,
-    'YouTube overlay did not reveal player',
   )
 
   await page.locator('.todo-widget input[aria-label="Add task"]').fill('Persistence check')

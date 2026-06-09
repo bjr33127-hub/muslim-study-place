@@ -1,6 +1,7 @@
 import {
   BookOpen,
   CheckSquare,
+  AudioLines,
   Image,
   NotebookPen,
   Timer,
@@ -16,6 +17,7 @@ import { WidgetFrame } from './components/layout/WidgetFrame'
 import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
 import { NotesWidget } from './components/widgets/NotesWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
+import { QuranPlayerWidget } from './components/widgets/QuranPlayerWidget'
 import { SpotifyWidget } from './components/widgets/SpotifyWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
 import { YoutubeWidget } from './components/widgets/YoutubeWidget'
@@ -54,6 +56,7 @@ const widgetIcons: Record<WidgetId, ReactNode> = {
   pomodoro: <Timer size={18} strokeWidth={1.8} />,
   todo: <CheckSquare size={18} strokeWidth={1.8} />,
   notes: <NotebookPen size={18} strokeWidth={1.8} />,
+  quran: <AudioLines size={18} strokeWidth={1.8} />,
   spotify: <BookOpen size={18} strokeWidth={1.8} />,
   youtube: <Video size={18} strokeWidth={1.8} />,
   backgrounds: <Image size={18} strokeWidth={1.8} />,
@@ -210,9 +213,9 @@ function App() {
   const [uploadVersion, setUploadVersion] = useState(0)
 
   useEffect(() => {
-    if (layoutVersion < 3) {
+    if (layoutVersion < 5) {
       setLayouts(DEFAULT_LAYOUTS)
-      setLayoutVersion(3)
+      setLayoutVersion(5)
     }
   }, [layoutVersion, setLayoutVersion, setLayouts])
 
@@ -829,6 +832,8 @@ function App() {
         )
       case 'notes':
         return <NotesWidget />
+      case 'quran':
+        return <QuranPlayerWidget />
       case 'spotify':
         return <SpotifyWidget />
       case 'youtube':

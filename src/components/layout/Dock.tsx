@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   BookOpen,
   CheckSquare,
   Image,
@@ -14,6 +15,7 @@ const dockIcons: Record<WidgetId, ElementType> = {
   pomodoro: Timer,
   todo: CheckSquare,
   notes: NotebookPen,
+  quran: AudioLines,
   spotify: BookOpen,
   youtube: Video,
   backgrounds: Image,

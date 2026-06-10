@@ -12,9 +12,8 @@ A cosy halal study dashboard inspired by Astrostation, rebuilt for Quran-first f
 - Persistent notes widget with categories, search, pinning, and autosave.
 - Configurable Pomodoro durations and long-break cadence.
 - Addictive focus flame streak plus best continuous pomodoro streak.
-- Spotify launcher for the `Omar Bn DiaaAldeen` playlist, opened in Spotify for full playback.
-- Liquid in-site Quran audio player with Omar Diaa Aldeen recitations.
-- YouTube embed defaulting to Omar Bn DiaaAldeen, hidden behind a neutral load panel until clicked.
+- Minimal glass Quran mini-player using the Quran.com API with selectable reciters and all 114 chapters.
+- YouTube widget shown by default with the configured Quran playlist and replaceable URL.
 - Built-in local backgrounds: Train, Oasis, Japan, and Night Cosy.
 - Optional bright WebGL magic dust particles on image backgrounds.
 - Background picker with local uploads stored in IndexedDB.

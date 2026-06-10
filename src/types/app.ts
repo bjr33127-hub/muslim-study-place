@@ -2,8 +2,6 @@ export type WidgetId =
   | 'pomodoro'
   | 'todo'
   | 'notes'
-  | 'quran'
-  | 'spotify'
   | 'youtube'
   | 'backgrounds'
 

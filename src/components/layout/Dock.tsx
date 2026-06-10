@@ -1,12 +1,4 @@
-import {
-  AudioLines,
-  BookOpen,
-  CheckSquare,
-  Image,
-  NotebookPen,
-  Timer,
-  Video,
-} from 'lucide-react'
+import { CheckSquare, Image, NotebookPen, Timer, Video } from 'lucide-react'
 import type { ElementType } from 'react'
 import { WIDGET_LABELS, WIDGET_ORDER } from '../../lib/defaults'
 import type { WidgetId, WidgetLayout } from '../../types/app'
@@ -15,8 +7,6 @@ const dockIcons: Record<WidgetId, ElementType> = {
   pomodoro: Timer,
   todo: CheckSquare,
   notes: NotebookPen,
-  quran: AudioLines,
-  spotify: BookOpen,
   youtube: Video,
   backgrounds: Image,
 }

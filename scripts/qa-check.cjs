@@ -110,28 +110,45 @@ async function main() {
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2500)
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('audio.quran-audio-element')
+        ?.getAttribute('src')
+        ?.includes('download.quranicaudio.com'),
+    null,
+    { timeout: 15000 },
+  )
 
   const initial = await page.evaluate(() => ({
     title: document.title,
     videoSrc:
       document.querySelector('video.background-media source')?.getAttribute('src') ||
       '',
-    spotifyHref:
-      document.querySelector('.spotify-open-link')?.getAttribute('href') || '',
-    spotifyIframeCount: document.querySelectorAll('.widget-frame-spotify iframe').length,
+    spotifyWidgetCount: document.querySelectorAll('.widget-frame-spotify').length,
+    spotifyDockButtonCount: document.querySelectorAll('button[aria-label="Spotify"]').length,
     quranAudioSrc:
       document
         .querySelector('audio.quran-audio-element')
         ?.getAttribute('src') || '',
-    quranText: document.querySelector('.widget-frame-quran')?.textContent || '',
+    quranText: document.querySelector('.quran-mini-player')?.textContent || '',
     quranPlayerState:
-      document.querySelector('.quran-player-widget')?.getAttribute('data-player-state') ||
+      document.querySelector('.quran-mini-player')?.getAttribute('data-player-state') ||
+      '',
+    quranExpanded:
+      document.querySelector('.quran-mini-player')?.getAttribute('data-expanded') ||
       '',
     quranFrameCount: document.querySelectorAll('iframe[title="Quran recitation player"]').length,
     youtubeSrc:
       document
         .querySelector('iframe[title="YouTube Quran player"]')
         ?.getAttribute('src') || '',
+    topbarGap: (() => {
+      const player = document.querySelector('.quran-mini-player')?.getBoundingClientRect()
+      const stats = document.querySelector('.topbar-actions')?.getBoundingClientRect()
+      return player && stats ? Math.round(stats.left - player.right) : null
+    })(),
+    youtubeWidgetCount: document.querySelectorAll('.widget-frame-youtube').length,
     youtubeOverlay: document.querySelector('.youtube-overlay')?.textContent || '',
     brandLockup: document.querySelector('.brand-lockup')?.textContent || '',
     chatWidgetCount: document.querySelectorAll('.chatgpt-widget').length,
@@ -142,28 +159,15 @@ async function main() {
     chainText: document.querySelector('.pomodoro-chain')?.textContent || '',
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
     quranWidgetCount: document.querySelectorAll('.widget-frame-quran').length,
+    quranMiniCount: document.querySelectorAll('.quran-mini-player').length,
+    quranDockButtonCount: document.querySelectorAll('button[aria-label="Quran"]').length,
     youtubeDockButtonCount: document.querySelectorAll('button[aria-label="YouTube"]').length,
     notesWidgetCount: document.querySelectorAll('.widget-frame-notes').length,
-    spotifyForms: document.querySelectorAll('.widget-frame-spotify .url-form').length,
+    youtubeForms: document.querySelectorAll('.widget-frame-youtube .url-form').length,
     particleCount: document.querySelectorAll('.background-light-particles span').length,
     magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     backgroundText: document.querySelector('.background-list')?.textContent || '',
-    spotifyTodoOverlap: (() => {
-      const spotify = document.querySelector('.widget-frame-spotify')?.getBoundingClientRect()
-      const todo = document.querySelector('.widget-frame-todo')?.getBoundingClientRect()
-
-      if (!spotify || !todo) {
-        return true
-      }
-
-      return !(
-        spotify.right <= todo.left ||
-        spotify.left >= todo.right ||
-        spotify.bottom <= todo.top ||
-        spotify.top >= todo.bottom
-      )
-    })(),
     ankiWidgetCount: document.querySelectorAll('.widget-frame-anki').length,
     text: document.body.innerText,
   }))
@@ -173,23 +177,35 @@ async function main() {
     initial.videoSrc.includes('backgrounds/train.f244a946.mp4'),
     'Train MP4 is not the active source',
   )
+  assert(initial.spotifyWidgetCount === 0, 'Spotify widget should be removed')
+  assert(initial.spotifyDockButtonCount === 0, 'Spotify dock toggle should be removed')
   assert(
-    initial.spotifyHref.includes('37i9dQZF1DZ06evO2QBzaO'),
-    'Spotify launch playlist mismatch',
-  )
-  assert(initial.spotifyIframeCount === 0, 'Spotify iframe should be removed')
-  assert(
-    initial.quranAudioSrc.includes('archive.org/download/20240229_20240229_1756') &&
-      initial.quranAudioSrc.includes('.mp3'),
-    'Quran player audio source mismatch',
+    initial.quranAudioSrc.includes('download.quranicaudio.com') &&
+      initial.quranAudioSrc.includes('/1.mp3'),
+    'Quran player should use Quran.com audio API output',
   )
   assert(
-    initial.quranText.includes('Omar Diaa Aldeen') &&
-      initial.quranText.includes('Al-Baqarah'),
+    initial.quranText.includes('Al-Fatihah'),
     'Quran player copy missing',
   )
+  assert(initial.quranPlayerState === 'paused', 'Quran player should start paused')
+  assert(initial.quranExpanded === 'false', 'Quran mini player should start collapsed')
   assert(initial.quranFrameCount === 0, 'Quran player should not use a video iframe')
-  assert(initial.youtubeSrc === '', 'Legacy YouTube widget should be hidden by default')
+  assert(
+    initial.youtubeSrc.includes('youtube.com/embed/videoseries') &&
+      initial.youtubeSrc.includes('PL5JBifZsekUp4P9gf3WbAma9xkvz9AzrS'),
+    'YouTube widget should show the default Quran playlist',
+  )
+  assert(
+    !initial.youtubeSrc.includes('/embed/KdUCQN_q7Ms'),
+    'YouTube playlist should not depend on the unavailable default video embed',
+  )
+  assert(
+    initial.topbarGap === null || initial.topbarGap >= 8,
+    'Quran mini player should not overlap the top stats',
+  )
+  assert(initial.youtubeWidgetCount === 1, 'YouTube widget should be visible by default')
+  assert(initial.youtubeOverlay === '', 'YouTube overlay should be removed')
   assert(initial.youtubeDockButtonCount === 1, 'YouTube dock toggle should remain available')
   assert(initial.brandLockup === '', 'Top-left brand block is still present')
   assert(initial.chatWidgetCount === 0, 'ChatGPT widget should be removed')
@@ -198,13 +214,14 @@ async function main() {
   assert(initial.bestRunText.includes('best continuous'), 'Best run star missing')
   assert(initial.totalStarsText.includes('total stars'), 'Total star counter missing')
   assert(initial.chainText.includes('continuous'), 'Pomodoro star chain missing')
-  assert(initial.spotifyForms === 0, 'Spotify widget still has block controls')
+  assert(initial.youtubeForms === 1, 'YouTube URL controls are missing')
   assert(initial.particleCount === 0, 'Light particles should be removed')
   assert(initial.magicParticleCanvasCount === 0, 'Magic particles should wait for image backgrounds')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
-  assert(!initial.spotifyTodoOverlap, 'Spotify and Todo widgets overlap')
-  assert(initial.visibleWidgets === 6, 'Expected six widgets to be visible')
-  assert(initial.quranWidgetCount === 1, 'Quran widget should be visible')
+  assert(initial.visibleWidgets === 5, 'Expected five draggable widgets to be visible')
+  assert(initial.quranWidgetCount === 0, 'Quran should no longer be a draggable widget')
+  assert(initial.quranMiniCount === 1, 'Quran mini player should be visible')
+  assert(initial.quranDockButtonCount === 0, 'Quran dock toggle should be removed')
   assert(initial.notesWidgetCount === 1, 'Notes widget should be visible')
   ;['Train', 'Oasis', 'Japan', 'Night Cosy'].forEach((label) => {
     assert(initial.backgroundText.includes(label), `${label} background is missing`)
@@ -212,47 +229,80 @@ async function main() {
   assert(initial.ankiWidgetCount === 0, 'Anki widget should be removed')
   assert(!/anki|ankiconnect|anki-connect/i.test(initial.text), 'Anki copy should be removed')
   assert(
-    !/lofi|twitch|music station|lofi girl|chatgpt/i.test(initial.text),
-    'Forbidden lofi/twitch/chatgpt copy found',
+    !/lofi|twitch|music station|lofi girl|chatgpt|spotify/i.test(initial.text),
+    'Forbidden lofi/twitch/chatgpt/spotify copy found',
   )
-
-  const spotifyPopupPromise = page.waitForEvent('popup')
-  await page.getByRole('link', { name: 'Open Spotify' }).click()
-  const spotifyPopup = await spotifyPopupPromise
-  assert(
-    spotifyPopup.url().includes('37i9dQZF1DZ06evO2QBzaO'),
-    'Spotify launcher did not open the Omar playlist',
-  )
-  await spotifyPopup.close()
 
   await page.waitForSelector('audio.quran-audio-element', { state: 'attached' })
+  await page.waitForFunction(() =>
+    document
+      .querySelector('audio.quran-audio-element')
+      ?.getAttribute('src')
+      ?.includes('download.quranicaudio.com'),
+  )
+  assert(
+    await page.locator('audio.quran-audio-element').evaluate((audio) => audio.paused),
+    'Quran audio should start paused',
+  )
+  await page.getByLabel('Show Quran recitations').click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.quran-mini-player')
+        ?.getAttribute('data-expanded') === 'true',
+  )
+  assert(
+    (await page.locator('.quran-mini-list button').count()) === 114,
+    'Quran mini player should expose all 114 chapters',
+  )
+  assert(
+    (await page.locator('select[aria-label="Quran reciter"] option').count()) >= 8,
+    'Quran mini player should expose multiple reciters',
+  )
+  await page.locator('select[aria-label="Quran reciter"]').selectOption('3')
+  await page.waitForFunction(
+    () => document.querySelector('.quran-mini-player')?.getAttribute('data-reciter-id') === '3',
+  )
+  await page.locator('.quran-mini-list button').filter({ hasText: 'Yusuf' }).click()
+  await page.waitForFunction(() =>
+    document.querySelector('.quran-mini-player')?.getAttribute('data-chapter-id') === '12',
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('audio.quran-audio-element')?.getAttribute('src')?.includes('/12.mp3'),
+  )
+  assert(
+    (await page.locator('.quran-mini-list button.is-selected').filter({
+      hasText: 'Yusuf',
+    }).count()) === 1,
+    'Quran recitation selection did not update',
+  )
+  assert(
+    await page.locator('audio.quran-audio-element').evaluate((audio) => audio.paused),
+    'Selecting a Quran recitation should not autoplay',
+  )
   await page.getByLabel('Play Quran recitation').click()
   await page.waitForFunction(
     () =>
       document
-        .querySelector('.quran-player-widget')
+        .querySelector('.quran-mini-player')
         ?.getAttribute('data-player-state') === 'playing',
   )
   assert(
     await page.getByLabel('Pause Quran recitation').isVisible(),
     'Quran play button did not enter pause state',
   )
-  await page
-    .locator('.quran-recitation-list button')
-    .filter({ hasText: 'Yusuf' })
-    .click()
-  await page.waitForFunction(() =>
-    document
-      .querySelector('audio.quran-audio-element')
-      ?.getAttribute('src')
-      ?.includes('Surah%20Yusuf.mp3'),
+  await page.getByLabel('Pause Quran recitation').click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.quran-mini-player')
+        ?.getAttribute('data-player-state') === 'paused',
   )
   assert(
-    (await page.locator('.quran-recitation-list button.is-selected').filter({
-      hasText: 'Yusuf',
-    }).count()) === 1,
-    'Quran recitation selection did not update',
+    await page.locator('audio.quran-audio-element').evaluate((audio) => audio.paused),
+    'Quran QA should leave audio paused',
   )
+  await page.getByLabel('Hide Quran recitations').click()
 
   await page.locator('.settings-trigger').click()
   assert(
@@ -796,6 +846,10 @@ async function main() {
     dockBottom: document.querySelector('.dock')?.getBoundingClientRect().bottom || 0,
     firstWidgetTop:
       document.querySelector('.widget-frame')?.getBoundingClientRect().top || 0,
+    quranMiniCount: document.querySelectorAll('.quran-mini-player').length,
+    quranPlayerState:
+      document.querySelector('.quran-mini-player')?.getAttribute('data-player-state') ||
+      '',
     magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
     magicParticleMetrics: (() => {
       const canvas = document.querySelector('.magic-particles-canvas')
@@ -843,6 +897,8 @@ async function main() {
   }))
   assert(mobile.noHorizontalOverflow, 'Mobile layout has horizontal overflow')
   assert(mobile.dockBottom < mobile.firstWidgetTop, 'Mobile dock overlaps first widget')
+  assert(mobile.quranMiniCount === 1, 'Mobile Quran mini player is missing')
+  assert(mobile.quranPlayerState === 'paused', 'Mobile Quran player should remain paused')
   assert(mobile.magicParticleCanvasCount === 1, 'Mobile magic particles are missing')
   assert(mobile.magicParticleMetrics.litSamples > 0, 'Mobile magic particles are blank')
   assert(

@@ -1,25 +1,34 @@
-import { Play, Save } from 'lucide-react'
-import { useState } from 'react'
+import { Save } from 'lucide-react'
+import { useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { usePersistentState } from '../../hooks/usePersistentState'
-import { YOUTUBE_DEFAULT_VIDEO_ID } from '../../lib/defaults'
+import { YOUTUBE_DEFAULT_URL } from '../../lib/defaults'
 import { normalizeYoutubeEmbed } from '../../lib/media'
 
-const defaultYoutubeUrl = `https://www.youtube.com/watch?v=${YOUTUBE_DEFAULT_VIDEO_ID}`
+const legacyYoutubeUrl = 'https://www.youtube.com/watch?v=z23pnK_-0og'
 
 export function YoutubeWidget() {
   const [youtubeUrl, setYoutubeUrl] = usePersistentState(
     'youtube:url',
-    defaultYoutubeUrl,
+    YOUTUBE_DEFAULT_URL,
   )
-  const [draft, setDraft] = useState(youtubeUrl)
-  const [isRevealed, setIsRevealed] = useState(false)
-  const embedUrl = normalizeYoutubeEmbed(youtubeUrl)
+  const effectiveYoutubeUrl =
+    youtubeUrl === legacyYoutubeUrl ? YOUTUBE_DEFAULT_URL : youtubeUrl
+  const embedUrl = normalizeYoutubeEmbed(effectiveYoutubeUrl)
 
-  const saveUrl = (event: FormEvent) => {
+  useEffect(() => {
+    if (youtubeUrl === legacyYoutubeUrl) {
+      setYoutubeUrl(YOUTUBE_DEFAULT_URL)
+    }
+  }, [setYoutubeUrl, youtubeUrl])
+
+  const saveUrl = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setYoutubeUrl(draft.trim() || defaultYoutubeUrl)
-    setIsRevealed(false)
+    const form = event.currentTarget
+    const data = new FormData(form)
+    const nextUrl = String(data.get('youtube-url') ?? '').trim()
+
+    setYoutubeUrl(nextUrl || YOUTUBE_DEFAULT_URL)
   }
 
   return (
@@ -27,28 +36,18 @@ export function YoutubeWidget() {
       <div className="youtube-shell">
         <iframe
           title="YouTube Quran player"
-          className={`youtube-embed${isRevealed ? '' : ' is-concealed'}`}
+          className="youtube-embed"
           src={embedUrl}
           allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           loading="lazy"
         />
-        {!isRevealed ? (
-          <button
-            className="youtube-overlay"
-            type="button"
-            onClick={() => setIsRevealed(true)}
-          >
-            <Play size={28} strokeWidth={1.8} />
-            <span>Omar Bn DiaaAldeen</span>
-            <strong>Load YouTube</strong>
-          </button>
-        ) : null}
       </div>
       <form className="url-form" onSubmit={saveUrl}>
         <input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          key={effectiveYoutubeUrl}
+          name="youtube-url"
+          defaultValue={effectiveYoutubeUrl}
           aria-label="YouTube URL"
         />
         <button type="submit" aria-label="Save YouTube URL">

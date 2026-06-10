@@ -1,12 +1,4 @@
-import {
-  BookOpen,
-  CheckSquare,
-  AudioLines,
-  Image,
-  NotebookPen,
-  Timer,
-  Video,
-} from 'lucide-react'
+import { CheckSquare, Image, NotebookPen, Timer, Video } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BackgroundLayer } from './components/layout/BackgroundLayer'
@@ -17,8 +9,6 @@ import { WidgetFrame } from './components/layout/WidgetFrame'
 import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
 import { NotesWidget } from './components/widgets/NotesWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
-import { QuranPlayerWidget } from './components/widgets/QuranPlayerWidget'
-import { SpotifyWidget } from './components/widgets/SpotifyWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
 import { YoutubeWidget } from './components/widgets/YoutubeWidget'
 import { usePersistentState } from './hooks/usePersistentState'
@@ -56,8 +46,6 @@ const widgetIcons: Record<WidgetId, ReactNode> = {
   pomodoro: <Timer size={18} strokeWidth={1.8} />,
   todo: <CheckSquare size={18} strokeWidth={1.8} />,
   notes: <NotebookPen size={18} strokeWidth={1.8} />,
-  quran: <AudioLines size={18} strokeWidth={1.8} />,
-  spotify: <BookOpen size={18} strokeWidth={1.8} />,
   youtube: <Video size={18} strokeWidth={1.8} />,
   backgrounds: <Image size={18} strokeWidth={1.8} />,
 }
@@ -213,9 +201,9 @@ function App() {
   const [uploadVersion, setUploadVersion] = useState(0)
 
   useEffect(() => {
-    if (layoutVersion < 5) {
+    if (layoutVersion < 6) {
       setLayouts(DEFAULT_LAYOUTS)
-      setLayoutVersion(5)
+      setLayoutVersion(6)
     }
   }, [layoutVersion, setLayoutVersion, setLayouts])
 
@@ -832,10 +820,6 @@ function App() {
         )
       case 'notes':
         return <NotesWidget />
-      case 'quran':
-        return <QuranPlayerWidget />
-      case 'spotify':
-        return <SpotifyWidget />
       case 'youtube':
         return <YoutubeWidget />
       case 'backgrounds':

@@ -8,10 +8,10 @@ import type {
 } from '../types/app'
 import { publicPath } from './publicPath'
 
-export const SPOTIFY_PLAYLIST_URL =
-  'https://open.spotify.com/playlist/37i9dQZF1DZ06evO2QBzaO'
-
-export const YOUTUBE_DEFAULT_VIDEO_ID = 'z23pnK_-0og'
+export const YOUTUBE_DEFAULT_VIDEO_ID = 'KdUCQN_q7Ms'
+export const YOUTUBE_DEFAULT_PLAYLIST_ID = 'PL5JBifZsekUp4P9gf3WbAma9xkvz9AzrS'
+export const YOUTUBE_DEFAULT_URL =
+  `https://www.youtube.com/watch?v=${YOUTUBE_DEFAULT_VIDEO_ID}&list=${YOUTUBE_DEFAULT_PLAYLIST_ID}`
 
 export const BUILT_IN_BACKGROUNDS: BackgroundAsset[] = [
   {
@@ -26,10 +26,8 @@ export const BUILT_IN_BACKGROUNDS: BackgroundAsset[] = [
 
 export const WIDGET_ORDER: WidgetId[] = [
   'pomodoro',
-  'quran',
   'todo',
   'notes',
-  'spotify',
   'youtube',
   'backgrounds',
 ]
@@ -62,31 +60,13 @@ export const DEFAULT_LAYOUTS: Record<WidgetId, WidgetLayout> = {
     visible: true,
     z: 7,
   },
-  quran: {
-    id: 'quran',
-    x: 500,
-    y: 78,
-    width: 420,
-    height: 500,
-    visible: true,
-    z: 8,
-  },
-  spotify: {
-    id: 'spotify',
-    x: 500,
-    y: 620,
-    width: 420,
-    height: 260,
-    visible: true,
-    z: 2,
-  },
   youtube: {
     id: 'youtube',
     x: 500,
-    y: 900,
+    y: 540,
     width: 420,
     height: 360,
-    visible: false,
+    visible: true,
     z: 5,
   },
   backgrounds: {
@@ -104,8 +84,6 @@ export const WIDGET_LABELS: Record<WidgetId, string> = {
   pomodoro: 'Focus Timer',
   todo: 'Todo',
   notes: 'Notes',
-  quran: 'Quran',
-  spotify: 'Spotify',
   youtube: 'YouTube',
   backgrounds: 'Backgrounds',
 }

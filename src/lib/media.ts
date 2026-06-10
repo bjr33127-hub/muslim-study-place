@@ -2,15 +2,27 @@ import { YOUTUBE_DEFAULT_PLAYLIST_ID } from './defaults'
 
 const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/
 
+export type YoutubeTarget =
+  | { type: 'playlist'; playlistId: string }
+  | { type: 'video'; videoId: string }
+
 export function normalizeYoutubeEmbed(input: string) {
+  const target = parseYoutubeTarget(input)
+
+  return target.type === 'playlist'
+    ? playlistEmbed(target.playlistId)
+    : videoEmbed(target.videoId)
+}
+
+export function parseYoutubeTarget(input: string): YoutubeTarget {
   const trimmed = input.trim()
 
   if (!trimmed) {
-    return defaultYoutubeEmbed()
+    return defaultYoutubeTarget()
   }
 
   if (YOUTUBE_ID_PATTERN.test(trimmed)) {
-    return videoEmbed(trimmed)
+    return { type: 'video', videoId: trimmed }
   }
 
   try {
@@ -19,14 +31,14 @@ export function normalizeYoutubeEmbed(input: string) {
     const listId = cleanPlaylistId(url.searchParams.get('list'))
 
     if (listId) {
-      return playlistEmbed(listId)
+      return { type: 'playlist', playlistId: listId }
     }
 
     if (host === 'youtu.be') {
       const videoId = url.pathname.split('/').filter(Boolean)[0]
       return videoId && YOUTUBE_ID_PATTERN.test(videoId)
-        ? videoEmbed(videoId)
-        : defaultYoutubeEmbed()
+        ? { type: 'video', videoId }
+        : defaultYoutubeTarget()
     }
 
     if (host === 'youtube.com' || host === 'm.youtube.com') {
@@ -36,22 +48,22 @@ export function normalizeYoutubeEmbed(input: string) {
         : ''
 
       if (videoId && YOUTUBE_ID_PATTERN.test(videoId)) {
-        return videoEmbed(videoId)
+        return { type: 'video', videoId }
       }
 
       if (embedId && YOUTUBE_ID_PATTERN.test(embedId)) {
-        return videoEmbed(embedId)
+        return { type: 'video', videoId: embedId }
       }
     }
   } catch {
-    return defaultYoutubeEmbed()
+    return defaultYoutubeTarget()
   }
 
-  return defaultYoutubeEmbed()
+  return defaultYoutubeTarget()
 }
 
-function defaultYoutubeEmbed() {
-  return playlistEmbed(YOUTUBE_DEFAULT_PLAYLIST_ID)
+function defaultYoutubeTarget(): YoutubeTarget {
+  return { type: 'playlist', playlistId: YOUTUBE_DEFAULT_PLAYLIST_ID }
 }
 
 function videoEmbed(videoId: string) {

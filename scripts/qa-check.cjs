@@ -119,6 +119,15 @@ async function main() {
     null,
     { timeout: 15000 },
   )
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.youtube-widget')
+        ?.getAttribute('data-player-ready') === 'true' ||
+      Boolean(document.querySelector('.youtube-error')?.textContent),
+    null,
+    { timeout: 25000 },
+  )
 
   const initial = await page.evaluate(() => ({
     title: document.title,
@@ -143,6 +152,18 @@ async function main() {
       document
         .querySelector('iframe[title="YouTube Quran player"]')
         ?.getAttribute('src') || '',
+    youtubeReady:
+      document.querySelector('.youtube-widget')?.getAttribute('data-player-ready') ||
+      '',
+    youtubeKind:
+      document.querySelector('.youtube-widget')?.getAttribute('data-youtube-kind') ||
+      '',
+    youtubePlaylistId:
+      document
+        .querySelector('.youtube-widget')
+        ?.getAttribute('data-youtube-playlist-id') || '',
+    youtubeStatus: document.querySelector('.youtube-meta-row')?.textContent || '',
+    youtubeError: document.querySelector('.youtube-error')?.textContent || '',
     topbarGap: (() => {
       const player = document.querySelector('.quran-mini-player')?.getBoundingClientRect()
       const stats = document.querySelector('.topbar-actions')?.getBoundingClientRect()
@@ -164,6 +185,39 @@ async function main() {
     youtubeDockButtonCount: document.querySelectorAll('button[aria-label="YouTube"]').length,
     notesWidgetCount: document.querySelectorAll('.widget-frame-notes').length,
     youtubeForms: document.querySelectorAll('.widget-frame-youtube .url-form').length,
+    balancedWidgetLayout: (() => {
+      const rectFor = (id) =>
+        document.querySelector(`.widget-frame-${id}`)?.getBoundingClientRect()
+      const pomodoro = rectFor('pomodoro')
+      const todo = rectFor('todo')
+      const notes = rectFor('notes')
+      const youtube = rectFor('youtube')
+      const backgrounds = rectFor('backgrounds')
+
+      if (!pomodoro || !todo || !notes || !youtube || !backgrounds) {
+        return false
+      }
+
+      const rects = [pomodoro, todo, notes, youtube, backgrounds]
+      const overlaps = rects.some((rect, index) =>
+        rects.slice(index + 1).some(
+          (other) =>
+            rect.left < other.right &&
+            rect.right > other.left &&
+            rect.top < other.bottom &&
+            rect.bottom > other.top,
+        ),
+      )
+
+      return (
+        !overlaps &&
+        youtube.left > pomodoro.right &&
+        youtube.right < todo.left &&
+        notes.top > pomodoro.bottom &&
+        backgrounds.top > todo.bottom &&
+        Math.max(...rects.map((rect) => rect.bottom)) <= window.innerHeight - 8
+      )
+    })(),
     particleCount: document.querySelectorAll('.background-light-particles span').length,
     magicParticleCanvasCount: document.querySelectorAll('.magic-particles-canvas').length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -192,14 +246,20 @@ async function main() {
   assert(initial.quranExpanded === 'false', 'Quran mini player should start collapsed')
   assert(initial.quranFrameCount === 0, 'Quran player should not use a video iframe')
   assert(
-    initial.youtubeSrc.includes('youtube.com/embed/videoseries') &&
-      initial.youtubeSrc.includes('PL5JBifZsekUp4P9gf3WbAma9xkvz9AzrS'),
-    'YouTube widget should show the default Quran playlist',
+    initial.youtubeReady === 'true' ||
+      initial.youtubeError.includes('YouTube could not load'),
+    'YouTube API player should be ready or show the external YouTube fallback',
+  )
+  assert(
+    initial.youtubeKind === 'playlist' &&
+      initial.youtubePlaylistId === 'PL5JBifZsekUp4P9gf3WbAma9xkvz9AzrS',
+    'YouTube widget should target the default Quran playlist',
   )
   assert(
     !initial.youtubeSrc.includes('/embed/KdUCQN_q7Ms'),
     'YouTube playlist should not depend on the unavailable default video embed',
   )
+  assert(initial.youtubeStatus.includes('Playlist'), 'YouTube widget should show playlist mode')
   assert(
     initial.topbarGap === null || initial.topbarGap >= 8,
     'Quran mini player should not overlap the top stats',
@@ -215,6 +275,7 @@ async function main() {
   assert(initial.totalStarsText.includes('total stars'), 'Total star counter missing')
   assert(initial.chainText.includes('continuous'), 'Pomodoro star chain missing')
   assert(initial.youtubeForms === 1, 'YouTube URL controls are missing')
+  assert(initial.balancedWidgetLayout, 'Default desktop widgets should use the balanced layout')
   assert(initial.particleCount === 0, 'Light particles should be removed')
   assert(initial.magicParticleCanvasCount === 0, 'Magic particles should wait for image backgrounds')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')

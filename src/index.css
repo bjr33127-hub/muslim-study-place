@@ -1778,10 +1778,10 @@ a {
 
 .notes-list {
   display: flex;
-  flex: 0 0 112px;
+  flex: 1 1 58px;
   flex-direction: column;
   gap: 7px;
-  min-height: 74px;
+  min-height: 58px;
   overflow: auto;
   padding-right: 2px;
 }
@@ -1841,7 +1841,7 @@ a {
   display: grid;
   place-items: center;
   gap: 6px;
-  min-height: 74px;
+  min-height: 58px;
   border: 1px dashed rgba(222, 211, 178, 0.2);
   border-radius: var(--radius);
   color: var(--muted);
@@ -1896,24 +1896,68 @@ a {
 
 .youtube-shell {
   width: 100%;
-  flex: 1;
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
   min-height: 180px;
   border: 1px solid rgba(222, 211, 178, 0.15);
   border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.28);
-}
-
-.youtube-shell {
-  position: relative;
-  overflow: hidden;
   aspect-ratio: 16 / 9;
-  flex: 0 0 auto;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(217, 182, 108, 0.12), transparent 50%),
+    rgba(0, 0, 0, 0.28);
 }
 
 .youtube-embed {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.youtube-meta-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.youtube-meta-row span,
+.youtube-meta-row strong,
+.youtube-meta-row a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-meta-row span {
+  padding: 4px 8px;
+  border: 1px solid rgba(217, 182, 108, 0.18);
+  border-radius: 999px;
+  color: var(--gold);
+  background: rgba(217, 182, 108, 0.08);
+  font-weight: 740;
+}
+
+.youtube-meta-row strong {
+  font-weight: 650;
+}
+
+.youtube-meta-row a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold);
+  text-decoration-color: rgba(217, 182, 108, 0.42);
+}
+
+.youtube-error {
+  margin: -2px 0 0;
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .backgrounds-widget {

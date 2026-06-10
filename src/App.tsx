@@ -201,9 +201,9 @@ function App() {
   const [uploadVersion, setUploadVersion] = useState(0)
 
   useEffect(() => {
-    if (layoutVersion < 6) {
+    if (layoutVersion < 7) {
       setLayouts(DEFAULT_LAYOUTS)
-      setLayoutVersion(6)
+      setLayoutVersion(7)
     }
   }, [layoutVersion, setLayoutVersion, setLayouts])
 

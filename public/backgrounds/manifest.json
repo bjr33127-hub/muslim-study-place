@@ -19,5 +19,355 @@
     "kind": "image",
     "src": "night-cosy.png",
     "source": "built-in"
+  },
+  {
+    "id": "bg-01-vallee-printaniere",
+    "label": "Vallee printaniere",
+    "kind": "image",
+    "src": "generated/bg-01-vallee-printaniere.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-02-foret-automne-humide",
+    "label": "Foret d'automne",
+    "kind": "image",
+    "src": "generated/bg-02-foret-automne-humide.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-03-village-enneige",
+    "label": "Village enneige",
+    "kind": "image",
+    "src": "generated/bg-03-village-enneige.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-04-desert-dore",
+    "label": "Desert dore",
+    "kind": "image",
+    "src": "generated/bg-04-desert-dore.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-05-plage-turquoise",
+    "label": "Plage turquoise",
+    "kind": "image",
+    "src": "generated/bg-05-plage-turquoise.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-06-prairie-ete",
+    "label": "Prairie d'ete",
+    "kind": "image",
+    "src": "generated/bg-06-prairie-ete.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-07-foret-pins-brume",
+    "label": "Pins dans la brume",
+    "kind": "image",
+    "src": "generated/bg-07-foret-pins-brume.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-08-lac-gele",
+    "label": "Lac gele",
+    "kind": "image",
+    "src": "generated/bg-08-lac-gele.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-09-marais-lunaire",
+    "label": "Marais lunaire",
+    "kind": "image",
+    "src": "generated/bg-09-marais-lunaire.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-10-canyon-rouge",
+    "label": "Canyon rouge",
+    "kind": "image",
+    "src": "generated/bg-10-canyon-rouge.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-11-jardin-japonais-printemps",
+    "label": "Jardin japonais",
+    "kind": "image",
+    "src": "generated/bg-11-jardin-japonais-printemps.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-12-montagne-alpine",
+    "label": "Montagne alpine",
+    "kind": "image",
+    "src": "generated/bg-12-montagne-alpine.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-13-jungle-cascades",
+    "label": "Jungle aux cascades",
+    "kind": "image",
+    "src": "generated/bg-13-jungle-cascades.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-14-steppe-doree",
+    "label": "Steppe doree",
+    "kind": "image",
+    "src": "generated/bg-14-steppe-doree.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-15-cote-rocheuse-hiver",
+    "label": "Cote rocheuse",
+    "kind": "image",
+    "src": "generated/bg-15-cote-rocheuse-hiver.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-16-foret-boreale-aurores",
+    "label": "Aurores boreales",
+    "kind": "image",
+    "src": "generated/bg-16-foret-boreale-aurores.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-17-oasis-radieuse",
+    "label": "Oasis radieuse",
+    "kind": "image",
+    "src": "generated/bg-17-oasis-radieuse.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-18-champ-lavande",
+    "label": "Lavande d'ete",
+    "kind": "image",
+    "src": "generated/bg-18-champ-lavande.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-19-riviere-montagne",
+    "label": "Riviere de montagne",
+    "kind": "image",
+    "src": "generated/bg-19-riviere-montagne.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-20-savane-doree",
+    "label": "Savane doree",
+    "kind": "image",
+    "src": "generated/bg-20-savane-doree.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-21-ile-volcanique",
+    "label": "Ile volcanique",
+    "kind": "image",
+    "src": "generated/bg-21-ile-volcanique.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-22-foret-hiver-silence",
+    "label": "Foret d'hiver",
+    "kind": "image",
+    "src": "generated/bg-22-foret-hiver-silence.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-23-rizieres-pluie",
+    "label": "Rizieres sous pluie",
+    "kind": "image",
+    "src": "generated/bg-23-rizieres-pluie.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-24-plaine-arctique",
+    "label": "Plaine arctique",
+    "kind": "image",
+    "src": "generated/bg-24-plaine-arctique.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-25-foret-bambous",
+    "label": "Foret de bambous",
+    "kind": "image",
+    "src": "generated/bg-25-foret-bambous.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-26-falaise-fleurie",
+    "label": "Falaise fleurie",
+    "kind": "image",
+    "src": "generated/bg-26-falaise-fleurie.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-27-champ-ble",
+    "label": "Champ de ble",
+    "kind": "image",
+    "src": "generated/bg-27-champ-ble.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-28-foret-tropicale-orage",
+    "label": "Orage tropical",
+    "kind": "image",
+    "src": "generated/bg-28-foret-tropicale-orage.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-29-montagnes-crepuscule",
+    "label": "Montagnes au crepuscule",
+    "kind": "image",
+    "src": "generated/bg-29-montagnes-crepuscule.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-30-desert-sel",
+    "label": "Desert de sel",
+    "kind": "image",
+    "src": "generated/bg-30-desert-sel.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-31-vallee-brumeuse",
+    "label": "Vallee brumeuse",
+    "kind": "image",
+    "src": "generated/bg-31-vallee-brumeuse.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-32-foret-erables-temple",
+    "label": "Erables et temple",
+    "kind": "image",
+    "src": "generated/bg-32-foret-erables-temple.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-33-plage-clair-lune",
+    "label": "Plage nocturne",
+    "kind": "image",
+    "src": "generated/bg-33-plage-clair-lune.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-34-prairie-apres-pluie",
+    "label": "Prairie apres pluie",
+    "kind": "image",
+    "src": "generated/bg-34-prairie-apres-pluie.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-35-village-cotier-mediterraneen",
+    "label": "Village mediterraneen",
+    "kind": "image",
+    "src": "generated/bg-35-village-cotier-mediterraneen.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-36-montagnes-desertiques",
+    "label": "Montagnes desertiques",
+    "kind": "image",
+    "src": "generated/bg-36-montagnes-desertiques.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-37-foret-enchantee",
+    "label": "Foret enchantee",
+    "kind": "image",
+    "src": "generated/bg-37-foret-enchantee.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-38-lac-automne-reflets",
+    "label": "Lac d'automne",
+    "kind": "image",
+    "src": "generated/bg-38-lac-automne-reflets.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-39-banquise-coucher",
+    "label": "Banquise au soleil",
+    "kind": "image",
+    "src": "generated/bg-39-banquise-coucher.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-40-chemin-forestier-ete",
+    "label": "Chemin forestier",
+    "kind": "image",
+    "src": "generated/bg-40-chemin-forestier-ete.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-41-ile-tropicale-pluie",
+    "label": "Ile apres pluie",
+    "kind": "image",
+    "src": "generated/bg-41-ile-tropicale-pluie.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-42-haute-montagne-tempete",
+    "label": "Tempete alpine",
+    "kind": "image",
+    "src": "generated/bg-42-haute-montagne-tempete.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-43-desert-rocheux-nocturne",
+    "label": "Desert etoile",
+    "kind": "image",
+    "src": "generated/bg-43-desert-rocheux-nocturne.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-44-vallee-cascades",
+    "label": "Vallee aux cascades",
+    "kind": "image",
+    "src": "generated/bg-44-vallee-cascades.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-45-foret-bouleaux-hiver",
+    "label": "Bouleaux d'hiver",
+    "kind": "image",
+    "src": "generated/bg-45-foret-bouleaux-hiver.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-46-mangrove-tropicale",
+    "label": "Mangrove verte",
+    "kind": "image",
+    "src": "generated/bg-46-mangrove-tropicale.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-47-collines-ecossaises",
+    "label": "Collines ecossaises",
+    "kind": "image",
+    "src": "generated/bg-47-collines-ecossaises.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-48-champ-tournesols",
+    "label": "Tournesols",
+    "kind": "image",
+    "src": "generated/bg-48-champ-tournesols.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-49-lac-rose",
+    "label": "Lac rose",
+    "kind": "image",
+    "src": "generated/bg-49-lac-rose.webp",
+    "source": "built-in"
+  },
+  {
+    "id": "bg-50-foret-pluie-automne",
+    "label": "Pluie d'automne",
+    "kind": "image",
+    "src": "generated/bg-50-foret-pluie-automne.webp",
+    "source": "built-in"
   }
 ]

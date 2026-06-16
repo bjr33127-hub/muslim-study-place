@@ -1,24 +1,5 @@
 import type { UploadedBackgroundRecord } from '../types/app'
-
-const DB_NAME = 'muslim-study-place'
-const STORE_NAME = 'backgroundUploads'
-const DB_VERSION = 1
-
-function openBackgroundDb() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' })
-      }
-    }
-
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
+import { BACKGROUND_UPLOADS_STORE, openAppDb } from './appDb'
 
 function createId() {
   if ('randomUUID' in crypto) {
@@ -29,11 +10,11 @@ function createId() {
 }
 
 export async function listUploadedBackgrounds() {
-  const db = await openBackgroundDb()
+  const db = await openAppDb()
 
   return new Promise<UploadedBackgroundRecord[]>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly')
-    const request = tx.objectStore(STORE_NAME).getAll()
+    const tx = db.transaction(BACKGROUND_UPLOADS_STORE, 'readonly')
+    const request = tx.objectStore(BACKGROUND_UPLOADS_STORE).getAll()
 
     request.onsuccess = () => resolve(request.result as UploadedBackgroundRecord[])
     request.onerror = () => reject(request.error)
@@ -51,11 +32,11 @@ export async function saveUploadedBackground(file: File) {
     mimeType: file.type,
     createdAt: Date.now(),
   }
-  const db = await openBackgroundDb()
+  const db = await openAppDb()
 
   return new Promise<UploadedBackgroundRecord>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const request = tx.objectStore(STORE_NAME).put(record)
+    const tx = db.transaction(BACKGROUND_UPLOADS_STORE, 'readwrite')
+    const request = tx.objectStore(BACKGROUND_UPLOADS_STORE).put(record)
 
     request.onsuccess = () => resolve(record)
     request.onerror = () => reject(request.error)
@@ -64,11 +45,11 @@ export async function saveUploadedBackground(file: File) {
 }
 
 export async function deleteUploadedBackground(id: string) {
-  const db = await openBackgroundDb()
+  const db = await openAppDb()
 
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const request = tx.objectStore(STORE_NAME).delete(id)
+    const tx = db.transaction(BACKGROUND_UPLOADS_STORE, 'readwrite')
+    const request = tx.objectStore(BACKGROUND_UPLOADS_STORE).delete(id)
 
     request.onsuccess = () => resolve()
     request.onerror = () => reject(request.error)

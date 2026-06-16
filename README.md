@@ -8,13 +8,12 @@ A cosy halal study dashboard inspired by Astrostation, rebuilt for Quran-first f
 - Floating desktop widgets with mobile stacking.
 - Pomodoro focus timer.
 - Finished state with a small star animation, audible chime, and full stop when the current pomodoro objective is complete.
-- Persistent todo list with configurable pomodoro targets per task and task-level Start/Pause controls.
-- Persistent notes widget with categories, search, pinning, and autosave.
+- Persistent todo list with priorities, search, sorting, drag-and-drop ordering, redo history, and task-level Start/Pause controls.
 - Configurable Pomodoro durations and long-break cadence.
 - Addictive focus flame streak plus best continuous pomodoro streak.
 - Minimal glass Quran mini-player using the Quran.com API with selectable reciters and all 114 chapters.
 - YouTube widget shown by default with the configured Quran playlist and replaceable URL.
-- Built-in local backgrounds: Train, Oasis, Japan, and Night Cosy.
+- Built-in local backgrounds: Train, Oasis, Japan, Night Cosy, plus 50 generated halal landscape wallpapers.
 - Optional bright WebGL magic dust particles on image backgrounds.
 - Background picker with local uploads stored in IndexedDB.
 - Folder background support through `public/backgrounds/manifest.json`.
@@ -36,6 +35,8 @@ Put image or video files in `public/backgrounds`, then add entries to `public/ba
 ```
 
 Use only imagery that fits the halal visual rules of the project.
+
+The default collection now also includes 50 generated still-image wallpapers in `public/backgrounds/generated/`, all built as pure landscapes with no visible living beings.
 
 ## Scripts
 

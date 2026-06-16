@@ -1,6 +1,9 @@
-import { RotateCcw, X } from 'lucide-react'
-import { WIDGET_LABELS, WIDGET_ORDER } from '../../lib/defaults'
+import { Download, RotateCcw, Upload, X } from 'lucide-react'
+import { WIDGET_ORDER } from '../../lib/defaults'
+import { LANGUAGES } from '../../lib/i18n'
 import type {
+  AppLanguage,
+  MemoryStatus,
   StreakState,
   TimerSettings,
   WidgetId,
@@ -8,51 +11,104 @@ import type {
 } from '../../types/app'
 
 type SettingsPanelProps = {
+  copy: {
+    title: string
+    subtitle: string
+    close: string
+    widgets: string
+    resetLayout: string
+    language: string
+    interfaceLanguage: string
+    pomodoro: string
+    focusMinutes: string
+    shortBreakMinutes: string
+    longBreakMinutes: string
+    longBreakEvery: string
+    focusFlame: string
+    dailyFlameTarget: string
+    current: string
+    best: string
+    today: string
+    background: string
+    dimBackground: string
+    magicParticles: string
+    memory: string
+    memoryReady: string
+    memoryUnavailable: string
+    memoryKeys: (count: number) => string
+    memoryUpdated: (value: string) => string
+    memoryNever: string
+    exportData: string
+    importData: string
+    importHint: string
+    credit: string
+    creditCopy: string
+    creditLink: string
+  }
   isOpen: boolean
+  language: AppLanguage
+  widgetLabels: Record<WidgetId, string>
   layouts: Record<WidgetId, WidgetLayout>
   streak: StreakState
   timerSettings: TimerSettings
+  memoryStatus: MemoryStatus
+  memoryNotice: string
   backgroundDim: number
   particlesEnabled: boolean
   onClose: () => void
+  onLanguageChange: (language: AppLanguage) => void
   onResetLayout: () => void
   onToggleWidget: (id: WidgetId) => void
   onDailyGoalChange: (value: number) => void
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
   onParticlesEnabledChange: (value: boolean) => void
+  onExportData: () => void
+  onImportData: (file: File | null) => void
 }
 
 export function SettingsPanel({
+  copy,
   isOpen,
+  language,
+  widgetLabels,
   layouts,
   streak,
   timerSettings,
+  memoryStatus,
+  memoryNotice,
   backgroundDim,
   particlesEnabled,
   onClose,
+  onLanguageChange,
   onResetLayout,
   onToggleWidget,
   onDailyGoalChange,
   onTimerSettingChange,
   onBackgroundDimChange,
   onParticlesEnabledChange,
+  onExportData,
+  onImportData,
 }: SettingsPanelProps) {
   if (!isOpen) {
     return null
   }
 
+  const memoryUpdated = memoryStatus.updatedAt
+    ? new Date(memoryStatus.updatedAt).toLocaleString(language)
+    : ''
+
   return (
-    <aside className="settings-panel" aria-label="Settings">
+    <aside className="settings-panel" aria-label={copy.title}>
       <div className="settings-header">
         <div>
-          <h2>Settings</h2>
-          <p>Adjust the study place.</p>
+          <h2>{copy.title}</h2>
+          <p>{copy.subtitle}</p>
         </div>
         <button
           className="icon-button close-button"
           type="button"
-          aria-label="Close settings"
+          aria-label={copy.close}
           onClick={onClose}
         >
           <X size={16} strokeWidth={1.8} />
@@ -60,11 +116,29 @@ export function SettingsPanel({
       </div>
 
       <section className="settings-section">
-        <h3>Widgets</h3>
+        <h3>{copy.language}</h3>
+        <label className="settings-field">
+          <span>{copy.interfaceLanguage}</span>
+          <select
+            aria-label={copy.interfaceLanguage}
+            value={language}
+            onChange={(event) => onLanguageChange(event.target.value as AppLanguage)}
+          >
+            {LANGUAGES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="settings-section">
+        <h3>{copy.widgets}</h3>
         <div className="settings-list">
           {WIDGET_ORDER.map((id) => (
             <label key={id} className="settings-toggle">
-              <span>{WIDGET_LABELS[id]}</span>
+              <span>{widgetLabels[id]}</span>
               <input
                 type="checkbox"
                 checked={layouts[id].visible}
@@ -75,16 +149,16 @@ export function SettingsPanel({
         </div>
         <button className="ghost-action full-width" type="button" onClick={onResetLayout}>
           <RotateCcw size={16} strokeWidth={1.8} />
-          Reset layout
+          {copy.resetLayout}
         </button>
       </section>
 
       <section className="settings-section">
-        <h3>Pomodoro</h3>
+        <h3>{copy.pomodoro}</h3>
         <label className="settings-field">
-          <span>Focus minutes</span>
+          <span>{copy.focusMinutes}</span>
           <input
-            aria-label="Focus minutes"
+            aria-label={copy.focusMinutes}
             type="number"
             min="1"
             max="180"
@@ -95,9 +169,9 @@ export function SettingsPanel({
           />
         </label>
         <label className="settings-field">
-          <span>Short break minutes</span>
+          <span>{copy.shortBreakMinutes}</span>
           <input
-            aria-label="Short break minutes"
+            aria-label={copy.shortBreakMinutes}
             type="number"
             min="1"
             max="60"
@@ -108,9 +182,9 @@ export function SettingsPanel({
           />
         </label>
         <label className="settings-field">
-          <span>Long break minutes</span>
+          <span>{copy.longBreakMinutes}</span>
           <input
-            aria-label="Long break minutes"
+            aria-label={copy.longBreakMinutes}
             type="number"
             min="1"
             max="90"
@@ -121,9 +195,9 @@ export function SettingsPanel({
           />
         </label>
         <label className="settings-field">
-          <span>Long break every</span>
+          <span>{copy.longBreakEvery}</span>
           <input
-            aria-label="Long break every"
+            aria-label={copy.longBreakEvery}
             type="number"
             min="1"
             max="12"
@@ -136,10 +210,11 @@ export function SettingsPanel({
       </section>
 
       <section className="settings-section">
-        <h3>Focus flame</h3>
+        <h3>{copy.focusFlame}</h3>
         <label className="settings-field">
-          <span>Daily flame target</span>
+          <span>{copy.dailyFlameTarget}</span>
           <input
+            aria-label={copy.dailyFlameTarget}
             type="number"
             min="1"
             max="12"
@@ -148,16 +223,52 @@ export function SettingsPanel({
           />
         </label>
         <div className="streak-stats">
-          <span>Current {streak.current}</span>
-          <span>Best {streak.best}</span>
-          <span>Today {streak.todayCount}</span>
+          <span>{copy.current} {streak.current}</span>
+          <span>{copy.best} {streak.best}</span>
+          <span>{copy.today} {streak.todayCount}</span>
         </div>
       </section>
 
       <section className="settings-section">
-        <h3>Background</h3>
+        <h3>{copy.memory}</h3>
+        <div
+          className={`memory-status${memoryStatus.available ? ' is-ready' : ' is-offline'}`}
+        >
+          <strong>
+            {memoryStatus.available ? copy.memoryReady : copy.memoryUnavailable}
+          </strong>
+          <span>{copy.memoryKeys(memoryStatus.keyCount)}</span>
+          <small>
+            {memoryUpdated ? copy.memoryUpdated(memoryUpdated) : copy.memoryNever}
+          </small>
+        </div>
+        <div className="settings-actions-row">
+          <button className="ghost-action" type="button" onClick={onExportData}>
+            <Download size={15} strokeWidth={1.8} />
+            {copy.exportData}
+          </button>
+          <label className="ghost-action import-action">
+            <Upload size={15} strokeWidth={1.8} />
+            {copy.importData}
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                onImportData(event.target.files?.[0] ?? null)
+                event.currentTarget.value = ''
+              }}
+            />
+          </label>
+        </div>
+        <p className={memoryNotice ? 'form-error' : 'settings-hint'}>
+          {memoryNotice || copy.importHint}
+        </p>
+      </section>
+
+      <section className="settings-section">
+        <h3>{copy.background}</h3>
         <label className="settings-field">
-          <span>Dim background</span>
+          <span>{copy.dimBackground}</span>
           <input
             type="range"
             min="45"
@@ -167,9 +278,9 @@ export function SettingsPanel({
           />
         </label>
         <label className="settings-toggle">
-          <span>Magic particles</span>
+          <span>{copy.magicParticles}</span>
           <input
-            aria-label="Magic particles"
+            aria-label={copy.magicParticles}
             type="checkbox"
             checked={particlesEnabled}
             onChange={(event) => onParticlesEnabledChange(event.target.checked)}
@@ -178,13 +289,10 @@ export function SettingsPanel({
       </section>
 
       <section className="settings-section credit-section">
-        <h3>Credit</h3>
-        <p>
-          Thanks to Melkeydev, creator of Astrostation, for the inspiration and
-          the beautiful train background.
-        </p>
+        <h3>{copy.credit}</h3>
+        <p>{copy.creditCopy}</p>
         <a href="https://github.com/Melkeydev/astrostation" target="_blank" rel="noreferrer">
-          Astrostation on GitHub
+          {copy.creditLink}
         </a>
       </section>
     </aside>

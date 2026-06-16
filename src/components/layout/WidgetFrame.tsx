@@ -12,6 +12,10 @@ type Interaction = {
 
 type WidgetFrameProps = {
   title: string
+  copy: {
+    hide: (title: string) => string
+    resize: (title: string) => string
+  }
   icon: ReactNode
   layout: WidgetLayout
   children: ReactNode
@@ -23,6 +27,7 @@ type WidgetFrameProps = {
 
 export function WidgetFrame({
   title,
+  copy,
   icon,
   layout,
   children,
@@ -123,7 +128,7 @@ export function WidgetFrame({
           <button
             className="icon-button close-button"
             type="button"
-            aria-label={`Hide ${title}`}
+            aria-label={copy.hide(title)}
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
           >
@@ -144,7 +149,7 @@ export function WidgetFrame({
           <button
             className="icon-button close-button"
             type="button"
-            aria-label={`Hide ${title}`}
+            aria-label={copy.hide(title)}
             onClick={onClose}
           >
             <X size={16} strokeWidth={1.8} />
@@ -155,7 +160,7 @@ export function WidgetFrame({
       <button
         className="resize-handle"
         type="button"
-        aria-label={`Resize ${title}`}
+        aria-label={copy.resize(title)}
         onPointerDown={(event) => startInteraction(event, 'resize')}
       />
     </section>

@@ -1,4 +1,4 @@
-import { CheckSquare, Image, NotebookPen, Timer, Video } from 'lucide-react'
+import { CheckSquare, Image, Timer, Video } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BackgroundLayer } from './components/layout/BackgroundLayer'
@@ -7,7 +7,6 @@ import { SettingsPanel } from './components/layout/SettingsPanel'
 import { TopBar } from './components/layout/TopBar'
 import { WidgetFrame } from './components/layout/WidgetFrame'
 import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
-import { NotesWidget } from './components/widgets/NotesWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
 import { YoutubeWidget } from './components/widgets/YoutubeWidget'
@@ -18,7 +17,6 @@ import {
   DEFAULT_POMODORO_RUN,
   DEFAULT_STREAK,
   DEFAULT_TIMER_SETTINGS,
-  WIDGET_LABELS,
   WIDGET_ORDER,
   mergeDefaultLayouts,
 } from './lib/defaults'
@@ -29,15 +27,38 @@ import {
 } from './lib/backgroundDb'
 import { normalizeStreak, recordStreakActivity } from './lib/streak'
 import { normalizeTimerSettings, timerSeconds } from './lib/timer'
-import { clampPomodoros, normalizeTodos, seedTodos } from './lib/todos'
+import {
+  clampPomodoros,
+  filterAndSortTodos,
+  hasOpenTodoForRoot,
+  normalizeDifficulty,
+  normalizePriority,
+  normalizeTodos,
+  seedTodos,
+  todoRootId,
+} from './lib/todos'
 import { publicPath } from './lib/publicPath'
+import {
+  DEFAULT_LANGUAGE,
+  getCopy,
+  normalizeLanguage,
+} from './lib/i18n'
+import {
+  buildDurableSnapshot,
+  getDurableStorageStatus,
+  importDurableSnapshot,
+} from './lib/storage'
 import type {
+  AppLanguage,
   BackgroundAsset,
+  MemoryStatus,
   PomodoroRunState,
   TaskPomodoroMemory,
   TimerSettings,
   TimerMode,
+  TodoDifficulty,
   TodoItem,
+  TodoPriority,
   WidgetId,
   WidgetLayout,
 } from './types/app'
@@ -45,23 +66,52 @@ import type {
 const widgetIcons: Record<WidgetId, ReactNode> = {
   pomodoro: <Timer size={18} strokeWidth={1.8} />,
   todo: <CheckSquare size={18} strokeWidth={1.8} />,
-  notes: <NotebookPen size={18} strokeWidth={1.8} />,
   youtube: <Video size={18} strokeWidth={1.8} />,
   backgrounds: <Image size={18} strokeWidth={1.8} />,
+}
+
+const CURRENT_LAYOUT_VERSION = 11
+
+const DEFAULT_MEMORY_STATUS: MemoryStatus = {
+  available: false,
+  keyCount: 0,
+  updatedAt: null,
+  restored: false,
 }
 
 function createTaskPomodoroMemory(
   task: TodoItem,
   timerSettings: TimerSettings,
 ): TaskPomodoroMemory {
+  const targetPomodoros = clampPomodoros(task.requiredPomodoros)
+  const completedInTarget = Math.min(task.completedPomodoros, targetPomodoros)
+
   return {
     mode: 'focus',
     remaining: timerSeconds('focus', timerSettings),
-    targetPomodoros: clampPomodoros(
-      task.requiredPomodoros - task.completedPomodoros,
+    targetPomodoros,
+    completedInTarget,
+    currentRun: completedInTarget,
+  }
+}
+
+function syncTaskPomodoroMemory(
+  task: TodoItem,
+  timerSettings: TimerSettings,
+  memory?: TaskPomodoroMemory,
+): TaskPomodoroMemory {
+  const base = memory ?? createTaskPomodoroMemory(task, timerSettings)
+  const targetPomodoros = clampPomodoros(task.requiredPomodoros)
+  const completedInTarget = Math.min(task.completedPomodoros, targetPomodoros)
+
+  return {
+    ...base,
+    targetPomodoros,
+    completedInTarget,
+    currentRun: Math.min(
+      Math.max(base.currentRun, completedInTarget),
+      targetPomodoros,
     ),
-    completedInTarget: 0,
-    currentRun: 0,
   }
 }
 
@@ -126,6 +176,13 @@ function dedupeBackgrounds(backgrounds: BackgroundAsset[]) {
 }
 
 function App() {
+  const [languageState, setLanguageState] = usePersistentState<AppLanguage>(
+    'settings:language',
+    DEFAULT_LANGUAGE,
+  )
+  const language = normalizeLanguage(languageState)
+  const copy = useMemo(() => getCopy(language), [language])
+  const widgetLabels = copy.widgets
   const [storedLayouts, setLayouts] = usePersistentState(
     'widgetLayouts',
     DEFAULT_LAYOUTS,
@@ -168,19 +225,26 @@ function App() {
     Record<string, TaskPomodoroMemory>
   >('taskPomodoroMemory', {})
   const activeTaskMemory = activeTask ? taskPomodoroMemory[activeTask.id] : undefined
+  const syncedActiveTaskMemory = useMemo(
+    () =>
+      activeTask
+        ? syncTaskPomodoroMemory(activeTask, timerSettings, activeTaskMemory)
+        : undefined,
+    [activeTask, activeTaskMemory, timerSettings],
+  )
   const run = useMemo(
     () => ({
       ...DEFAULT_POMODORO_RUN,
       ...pomodoroRun,
-      ...(activeTaskMemory
+      ...(syncedActiveTaskMemory
         ? {
-            targetPomodoros: activeTaskMemory.targetPomodoros,
-            completedInTarget: activeTaskMemory.completedInTarget,
-            currentRun: activeTaskMemory.currentRun,
+            targetPomodoros: syncedActiveTaskMemory.targetPomodoros,
+            completedInTarget: syncedActiveTaskMemory.completedInTarget,
+            currentRun: syncedActiveTaskMemory.currentRun,
           }
         : {}),
     }),
-    [activeTaskMemory, pomodoroRun],
+    [pomodoroRun, syncedActiveTaskMemory],
   )
   const [streakState, setStreakState] = usePersistentState('streak', DEFAULT_STREAK)
   const streak = useMemo(() => normalizeStreak(streakState), [streakState])
@@ -199,11 +263,53 @@ function App() {
   )
   const [uploadError, setUploadError] = useState('')
   const [uploadVersion, setUploadVersion] = useState(0)
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus>(
+    DEFAULT_MEMORY_STATUS,
+  )
+  const [memoryNotice, setMemoryNotice] = useState('')
 
   useEffect(() => {
-    if (layoutVersion < 7) {
+    if (languageState !== language) {
+      setLanguageState(language)
+    }
+  }, [language, languageState, setLanguageState])
+
+  useEffect(() => {
+    document.documentElement.lang = language
+  }, [language])
+
+  const refreshMemoryStatus = useCallback((restored = false) => {
+    void getDurableStorageStatus(restored).then(setMemoryStatus)
+  }, [])
+
+  useEffect(() => {
+    refreshMemoryStatus()
+    const interval = window.setInterval(() => refreshMemoryStatus(), 8000)
+
+    return () => window.clearInterval(interval)
+  }, [refreshMemoryStatus])
+
+  useEffect(() => {
+    if (layoutVersion < 9) {
       setLayouts(DEFAULT_LAYOUTS)
-      setLayoutVersion(7)
+      setLayoutVersion(CURRENT_LAYOUT_VERSION)
+      return
+    }
+
+    if (layoutVersion < CURRENT_LAYOUT_VERSION) {
+      setLayouts((current) => {
+        const merged = mergeDefaultLayouts(current)
+
+        return {
+          ...merged,
+          youtube: {
+            ...DEFAULT_LAYOUTS.youtube,
+            visible: merged.youtube.visible,
+            z: merged.youtube.z,
+          },
+        }
+      })
+      setLayoutVersion(CURRENT_LAYOUT_VERSION)
     }
   }, [layoutVersion, setLayoutVersion, setLayouts])
 
@@ -428,7 +534,7 @@ function App() {
     )
 
     if (!uploadableFiles.length) {
-      setUploadError('Only image and video backgrounds are supported.')
+      setUploadError(copy.backgrounds.unsupported)
       return
     }
 
@@ -440,7 +546,7 @@ function App() {
         setSelectedBackgroundId(saved[0].id)
       }
     } catch {
-      setUploadError('Upload could not be saved in this browser.')
+      setUploadError(copy.backgrounds.uploadFailed)
     }
   }
 
@@ -453,7 +559,7 @@ function App() {
         setSelectedBackgroundId('train')
       }
     } catch {
-      setUploadError('Background could not be deleted.')
+      setUploadError(copy.backgrounds.deleteFailed)
     }
   }
 
@@ -514,8 +620,11 @@ function App() {
     setTaskPomodoroMemory((current) => ({
       ...current,
       [activeTask.id]: {
-        ...(current[activeTask.id] ??
-          createTaskPomodoroMemory(activeTask, nextSettings)),
+        ...syncTaskPomodoroMemory(
+          activeTask,
+          nextSettings,
+          current[activeTask.id],
+        ),
         mode: timerMode,
         remaining: nextRemaining,
       },
@@ -524,18 +633,203 @@ function App() {
 
   const resetLayout = () => {
     setLayouts(DEFAULT_LAYOUTS)
+    setLayoutVersion(CURRENT_LAYOUT_VERSION)
   }
 
-  const addTask = (text: string, requiredPomodoros: number) => {
+  const exportData = async () => {
+    try {
+      const snapshot = await buildDurableSnapshot()
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `muslim-study-place-backup-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setMemoryNotice('')
+      refreshMemoryStatus()
+    } catch {
+      setMemoryNotice(copy.settings.exportFailed)
+    }
+  }
+
+  const importData = async (file: File | null) => {
+    if (!file) {
+      return
+    }
+
+    try {
+      const payload = JSON.parse(await file.text())
+      await importDurableSnapshot(payload)
+      refreshMemoryStatus(true)
+      window.location.reload()
+    } catch {
+      setMemoryNotice(copy.settings.importFailed)
+    }
+  }
+
+  const nextManualRank = () => {
+    const ranks = todos
+      .filter((todo) => !todo.completed)
+      .map((todo) => todo.rank)
+
+    return ranks.length ? Math.min(...ranks) - 1 : Date.now()
+  }
+
+  const addTask = (
+    text: string,
+    requiredPomodoros: number,
+    priority: TodoPriority,
+    difficulty: TodoDifficulty,
+  ) => {
+    const now = Date.now()
+    const normalizedPriority = normalizePriority(priority)
+    const normalizedDifficulty = normalizeDifficulty(difficulty)
+
     commitTodos([
       {
         id: `todo-${Date.now()}`,
         text,
+        priority: normalizedPriority,
+        difficulty: normalizedDifficulty,
+        rank: nextManualRank(),
         completed: false,
-        active: todos.length === 0,
+        active: !todos.some((todo) => todo.active && !todo.completed),
         requiredPomodoros: clampPomodoros(requiredPomodoros),
         completedPomodoros: 0,
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+        repeatIndex: 0,
+      },
+      ...todos,
+    ])
+  }
+
+  const updateTask = (
+    taskId: string,
+    patch: Partial<
+      Pick<TodoItem, 'text' | 'priority' | 'difficulty' | 'requiredPomodoros'>
+    >,
+  ) => {
+    commitTodos(
+      todos.map((todo) => {
+        if (todo.id !== taskId) {
+          return todo
+        }
+
+        const requiredPomodoros =
+          patch.requiredPomodoros === undefined
+            ? todo.requiredPomodoros
+            : clampPomodoros(patch.requiredPomodoros)
+        const completedPomodoros = Math.min(
+          todo.completedPomodoros,
+          requiredPomodoros,
+        )
+        const completed = todo.completed || completedPomodoros >= requiredPomodoros
+        const text = typeof patch.text === 'string' && patch.text.trim()
+          ? patch.text.trim()
+          : todo.text
+
+        return {
+          ...todo,
+          text,
+          priority:
+            patch.priority === undefined
+              ? todo.priority
+              : normalizePriority(patch.priority),
+          difficulty:
+            patch.difficulty === undefined
+              ? todo.difficulty
+              : normalizeDifficulty(patch.difficulty),
+          requiredPomodoros,
+          completedPomodoros,
+          completed,
+          active: completed ? false : todo.active,
+          updatedAt: Date.now(),
+          completedAt: completed ? todo.completedAt ?? Date.now() : null,
+        }
+      }),
+    )
+  }
+
+  const reorderTask = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) {
+      return
+    }
+
+    const ordered = filterAndSortTodos(todos, 'active', '', 'manual')
+    const sourceIndex = ordered.findIndex((todo) => todo.id === sourceId)
+    const targetIndex = ordered.findIndex((todo) => todo.id === targetId)
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      return
+    }
+
+    const nextOrdered = [...ordered]
+    const [source] = nextOrdered.splice(sourceIndex, 1)
+    nextOrdered.splice(targetIndex, 0, source)
+
+    const rankById = new Map(
+      nextOrdered.map((todo, index) => [todo.id, index + 1]),
+    )
+    const now = Date.now()
+
+    commitTodos(
+      todos.map((todo) => {
+        const rank = rankById.get(todo.id)
+
+        if (rank !== undefined) {
+          return { ...todo, rank, updatedAt: now }
+        }
+
+        return todo
+      }),
+    )
+  }
+
+  const repeatTask = (taskId: string) => {
+    const task = todos.find((todo) => todo.id === taskId)
+
+    if (!task) {
+      return
+    }
+
+    const rootId = todoRootId(task)
+
+    if (hasOpenTodoForRoot(todos, rootId)) {
+      return
+    }
+
+    const repeatIndex =
+      Math.max(
+        task.repeatIndex,
+        ...todos
+          .filter((todo) => todo.id === rootId || todo.repeatOf === rootId)
+          .map((todo) => todo.repeatIndex),
+      ) + 1
+    const now = Date.now()
+
+    commitTodos([
+      {
+        id: `todo-${now}-${repeatIndex}`,
+        text: task.text,
+        priority: task.priority,
+        difficulty: task.difficulty,
+        rank: nextManualRank(),
+        completed: false,
+        active: !todos.some((todo) => todo.active && !todo.completed),
+        requiredPomodoros: task.requiredPomodoros,
+        completedPomodoros: 0,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null,
+        repeatOf: rootId,
+        repeatIndex,
       },
       ...todos,
     ])
@@ -561,8 +855,11 @@ function App() {
       }))
     }
 
-    const memory =
-      taskPomodoroMemory[taskId] ?? createTaskPomodoroMemory(task, timerSettings)
+    const memory = syncTaskPomodoroMemory(
+      task,
+      timerSettings,
+      taskPomodoroMemory[taskId],
+    )
 
     commitTodos(
       todos.map((todo) => ({
@@ -627,6 +924,55 @@ function App() {
     setTimerRunning(false)
   }
 
+  const startFreeFocus = useCallback(() => {
+    if (activeTask) {
+      setTaskPomodoroMemory((current) => ({
+        ...current,
+        [activeTask.id]: {
+          mode: timerMode,
+          remaining: timerRemaining,
+          targetPomodoros: run.targetPomodoros,
+          completedInTarget: run.completedInTarget,
+          currentRun: run.currentRun,
+        },
+      }))
+    }
+
+    commitTodos(
+      todos.map((todo) => ({
+        ...todo,
+        active: false,
+      })),
+    )
+    const freeTarget = clampPomodoros(pomodoroRun.targetPomodoros)
+
+    setPomodoroRun((current) => ({
+      ...current,
+      targetPomodoros: freeTarget,
+      completedInTarget: 0,
+      currentRun: 0,
+    }))
+    setTimerMode('focus')
+    setTimerRemaining(timerSeconds('focus', timerSettings))
+    setTimerRunning(true)
+  }, [
+    activeTask,
+    commitTodos,
+    pomodoroRun.targetPomodoros,
+    run.completedInTarget,
+    run.currentRun,
+    run.targetPomodoros,
+    setPomodoroRun,
+    setTaskPomodoroMemory,
+    setTimerMode,
+    setTimerRemaining,
+    setTimerRunning,
+    timerMode,
+    timerRemaining,
+    timerSettings,
+    todos,
+  ])
+
   const updateTaskPomodoro = useCallback((
     taskId: string,
     delta: number,
@@ -638,13 +984,22 @@ function App() {
           return todo
         }
 
+        const nextCompletedPomodoros = Math.min(
+          Math.max(todo.completedPomodoros + delta, 0),
+          todo.requiredPomodoros,
+        )
+        const completed =
+          delta > 0
+            ? todo.completed || nextCompletedPomodoros >= todo.requiredPomodoros
+            : false
+
         return {
           ...todo,
-          completed: delta > 0 ? todo.completed : false,
-          completedPomodoros: Math.min(
-            Math.max(todo.completedPomodoros + delta, 0),
-            todo.requiredPomodoros,
-          ),
+          completed,
+          active: completed ? false : todo.active,
+          completedPomodoros: nextCompletedPomodoros,
+          updatedAt: Date.now(),
+          completedAt: completed ? todo.completedAt ?? Date.now() : null,
         }
       }),
       recordCompletion,
@@ -706,9 +1061,7 @@ function App() {
       return
     }
 
-    const nextRequired = clampPomodoros(
-      Math.max(activeTask.completedPomodoros + nextTarget, activeTask.completedPomodoros + 1),
-    )
+    const nextRequired = Math.max(nextTarget, activeTask.completedPomodoros)
 
     commitTodos(
       todos.map((todo) => {
@@ -720,6 +1073,11 @@ function App() {
           ...todo,
           requiredPomodoros: nextRequired,
           completed: todo.completedPomodoros >= nextRequired,
+          updatedAt: Date.now(),
+          completedAt:
+            todo.completedPomodoros >= nextRequired
+              ? todo.completedAt ?? Date.now()
+              : null,
         }
       }),
     )
@@ -741,6 +1099,8 @@ function App() {
           completedPomodoros: completed
             ? todo.requiredPomodoros
             : Math.min(todo.completedPomodoros, todo.requiredPomodoros - 1),
+          updatedAt: Date.now(),
+          completedAt: completed ? Date.now() : null,
         }
       }),
       true,
@@ -760,7 +1120,7 @@ function App() {
     commitTodos(
       activeExists || remaining.length === 0
         ? remaining
-        : remaining.map((todo, index) => ({
+        : filterAndSortTodos(remaining, 'active', '', 'manual').map((todo, index) => ({
             ...todo,
             active: index === 0 && !todo.completed,
           })),
@@ -790,6 +1150,7 @@ function App() {
       case 'pomodoro':
         return (
           <PomodoroWidget
+            copy={copy.pomodoro}
             mode={timerMode}
             remaining={timerRemaining}
             isRunning={timerRunning}
@@ -801,30 +1162,34 @@ function App() {
             onRunningChange={setTimerRunning}
             onRunChange={changePomodoroRun}
             onTargetChange={updatePomodoroTarget}
+            onStartFreeFocus={startFreeFocus}
             onFocusComplete={completeFocusSession}
           />
         )
       case 'todo':
         return (
           <TodoWidget
+            copy={copy.todo}
             todos={todos}
             activeTaskId={activeTask?.id}
             isTimerRunning={timerRunning}
             onAddTask={addTask}
+            onUpdateTask={updateTask}
             onToggleTask={toggleTask}
             onDeleteTask={deleteTask}
+            onReorderTask={reorderTask}
+            onRepeatTask={repeatTask}
             onSetActive={setTaskActive}
             onStartTaskTimer={startTaskTimer}
             onPauseTaskTimer={pauseTaskTimer}
           />
         )
-      case 'notes':
-        return <NotesWidget />
       case 'youtube':
-        return <YoutubeWidget />
+        return <YoutubeWidget copy={copy.youtube} />
       case 'backgrounds':
         return (
           <BackgroundsWidget
+            copy={copy.backgrounds}
             backgrounds={backgrounds}
             selectedId={activeBackground.id}
             uploadError={uploadError}
@@ -844,6 +1209,7 @@ function App() {
         particlesEnabled={particlesEnabled}
       />
       <TopBar
+        copy={copy}
         currentBackground={activeBackground.label}
         streak={streak}
         bestPomodoroRun={run.bestRun}
@@ -852,26 +1218,41 @@ function App() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <SettingsPanel
+        copy={copy.settings}
         isOpen={settingsOpen}
+        language={language}
+        widgetLabels={widgetLabels}
         layouts={layouts}
         streak={streak}
         timerSettings={timerSettings}
+        memoryStatus={memoryStatus}
+        memoryNotice={memoryNotice}
         backgroundDim={backgroundDim}
         particlesEnabled={particlesEnabled}
         onClose={() => setSettingsOpen(false)}
+        onLanguageChange={setLanguageState}
         onResetLayout={resetLayout}
         onToggleWidget={toggleWidget}
         onDailyGoalChange={updateDailyGoal}
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
         onParticlesEnabledChange={setParticlesEnabled}
+        onExportData={exportData}
+        onImportData={importData}
       />
-      <Dock layouts={layouts} onToggle={toggleWidget} onFocus={focusWidget} />
-      <main className="workspace" aria-label="Study dashboard">
+      <Dock
+        labels={widgetLabels}
+        label={copy.dock.label}
+        layouts={layouts}
+        onToggle={toggleWidget}
+        onFocus={focusWidget}
+      />
+      <main className="workspace" aria-label={copy.app.workspace}>
         {WIDGET_ORDER.map((id) => (
           <WidgetFrame
             key={id}
-            title={WIDGET_LABELS[id]}
+            title={widgetLabels[id]}
+            copy={copy.widgetFrame}
             icon={widgetIcons[id]}
             layout={layouts[id]}
             onLayoutChange={updateLayout}

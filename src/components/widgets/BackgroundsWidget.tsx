@@ -1,8 +1,10 @@
 import { ImagePlus, Trash2, Upload } from 'lucide-react'
+import type { AppCopy } from '../../lib/i18n'
 import { publicPath } from '../../lib/publicPath'
 import type { BackgroundAsset } from '../../types/app'
 
 type BackgroundsWidgetProps = {
+  copy: AppCopy['backgrounds']
   backgrounds: BackgroundAsset[]
   selectedId: string
   uploadError?: string
@@ -12,6 +14,7 @@ type BackgroundsWidgetProps = {
 }
 
 export function BackgroundsWidget({
+  copy,
   backgrounds,
   selectedId,
   uploadError,
@@ -23,7 +26,7 @@ export function BackgroundsWidget({
     <div className="backgrounds-widget">
       <label className="upload-button">
         <Upload size={16} strokeWidth={1.9} />
-        Upload
+        {copy.upload}
         <input
           type="file"
           accept="image/*,video/*"
@@ -46,14 +49,14 @@ export function BackgroundsWidget({
               <ImagePlus size={16} strokeWidth={1.8} />
               <span>{background.label}</span>
               <small>
-                {background.source === 'upload' ? 'local base' : background.source}
+                {background.source === 'upload' ? copy.localBase : background.source}
               </small>
             </button>
             {background.source === 'upload' ? (
               <button
                 className="quiet-icon"
                 type="button"
-                aria-label={`Delete ${background.label}`}
+                aria-label={copy.delete(background.label)}
                 onClick={() => onDeleteUpload(background.id)}
               >
                 <Trash2 size={15} strokeWidth={1.8} />
@@ -64,7 +67,7 @@ export function BackgroundsWidget({
       </div>
       {uploadError ? <p className="form-error">{uploadError}</p> : null}
       <a className="attribution-link" href={publicPath('ATTRIBUTION.md')} target="_blank">
-        Train attribution
+        {copy.attribution}
       </a>
     </div>
   )

@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { usePersistentState } from '../../hooks/usePersistentState'
+import type { AppCopy } from '../../lib/i18n'
 import {
   DEFAULT_QURAN_CHAPTER_ID,
   DEFAULT_QURAN_RECITER_ID,
@@ -22,6 +23,10 @@ import {
   quranReciterLabel,
 } from '../../lib/quranApi'
 
+type QuranMiniPlayerProps = {
+  copy: AppCopy['quran']
+}
+
 function formatDuration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return '00:00'
@@ -32,7 +37,7 @@ function formatDuration(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remaining).padStart(2, '0')}`
 }
 
-export function QuranMiniPlayer() {
+export function QuranMiniPlayer({ copy }: QuranMiniPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const shouldResumeRef = useRef(false)
   const [expanded, setExpanded] = useState(false)
@@ -78,11 +83,11 @@ export function QuranMiniPlayer() {
         }
       })
       .catch(() => {
-        setPlayerError('Reciters API unavailable; using local list.')
+        setPlayerError(copy.apiUnavailable)
       })
 
     return () => controller.abort()
-  }, [selectedReciterId, setSelectedReciterId])
+  }, [copy.apiUnavailable, selectedReciterId, setSelectedReciterId])
 
   useEffect(() => {
     if (selectedReciter.id !== selectedReciterId) {
@@ -109,7 +114,7 @@ export function QuranMiniPlayer() {
     }
 
     if (!audioSrc) {
-      setPlayerError('Audio is still loading.')
+      setPlayerError(copy.audioLoading)
       return
     }
 
@@ -121,9 +126,9 @@ export function QuranMiniPlayer() {
       await audio.play()
     } catch {
       setIsPlaying(false)
-      setPlayerError('Tap play again to start.')
+      setPlayerError(copy.tapAgain)
     }
-  }, [audioSrc, volume])
+  }, [audioSrc, copy.audioLoading, copy.tapAgain, volume])
 
   const chooseChapter = useCallback(
     (id: number, resume = false) => {
@@ -193,7 +198,7 @@ export function QuranMiniPlayer() {
         }
 
         shouldResumeRef.current = false
-        setPlayerError('Quran audio API unavailable.')
+        setPlayerError(copy.audioUnavailable)
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -202,7 +207,7 @@ export function QuranMiniPlayer() {
       })
 
     return () => controller.abort()
-  }, [selectedChapter.id, selectedReciter.id])
+  }, [copy.audioUnavailable, selectedChapter.id, selectedReciter.id])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -247,7 +252,7 @@ export function QuranMiniPlayer() {
       data-audio-src={audioSrc}
       data-reciter-id={selectedReciter.id}
       data-chapter-id={selectedChapter.id}
-      aria-label="Quran mini player"
+      aria-label={copy.label}
     >
       <audio
         ref={audioRef}
@@ -276,7 +281,7 @@ export function QuranMiniPlayer() {
             className="quran-mini-display"
             type="button"
             aria-expanded={expanded}
-            aria-label={expanded ? 'Hide Quran recitations' : 'Show Quran recitations'}
+            aria-label={expanded ? copy.hide : copy.show}
             onClick={toggleExpanded}
           >
             <span className="quran-mini-orb" aria-hidden="true">
@@ -292,7 +297,7 @@ export function QuranMiniPlayer() {
           <div className="quran-mini-controls" onClick={stopControlPropagation}>
             <button
               type="button"
-              aria-label="Previous Quran recitation"
+              aria-label={copy.previous}
               onClick={() => selectByOffset(-1)}
             >
               <SkipBack size={14} strokeWidth={2} />
@@ -300,7 +305,7 @@ export function QuranMiniPlayer() {
             <button
               className="quran-mini-play"
               type="button"
-              aria-label={isPlaying ? 'Pause Quran recitation' : 'Play Quran recitation'}
+              aria-label={isPlaying ? copy.pause : copy.play}
               onClick={togglePlayback}
               disabled={isAudioLoading || !audioSrc}
             >
@@ -312,7 +317,7 @@ export function QuranMiniPlayer() {
             </button>
             <button
               type="button"
-              aria-label="Next Quran recitation"
+              aria-label={copy.next}
               onClick={() => selectByOffset(1)}
             >
               <SkipForward size={14} strokeWidth={2} />
@@ -320,7 +325,7 @@ export function QuranMiniPlayer() {
           </div>
         </div>
 
-        <div className="quran-mini-progress" aria-label="Quran recitation progress">
+        <div className="quran-mini-progress" aria-label={copy.progress}>
           <span style={{ width: `${progress}%` }} />
         </div>
 
@@ -328,13 +333,15 @@ export function QuranMiniPlayer() {
           <div className="quran-mini-panel" onClick={stopControlPropagation}>
             <div className="quran-mini-meta">
               <span>{formatDuration(currentTime)}</span>
-              <strong>{isAudioLoading ? 'Loading' : isPlaying ? 'Playing' : 'Paused'}</strong>
+              <strong>
+                {isAudioLoading ? copy.loading : isPlaying ? copy.playing : copy.paused}
+              </strong>
               <span>{formatDuration(duration)}</span>
             </div>
             <label className="quran-mini-select">
-              <span>Reciter</span>
+              <span>{copy.reciter}</span>
               <select
-                aria-label="Quran reciter"
+                aria-label={copy.reciter}
                 value={selectedReciter.id}
                 onChange={(event) => chooseReciter(Number(event.target.value))}
               >
@@ -348,7 +355,7 @@ export function QuranMiniPlayer() {
             <label className="quran-mini-volume">
               <Volume2 size={13} strokeWidth={1.9} />
               <input
-                aria-label="Quran volume"
+                aria-label={copy.volume}
                 type="range"
                 min="0"
                 max="100"
@@ -356,7 +363,7 @@ export function QuranMiniPlayer() {
                 onChange={(event) => updateVolume(Number(event.target.value))}
               />
             </label>
-            <div className="quran-mini-list" aria-label="Quran chapters">
+            <div className="quran-mini-list" aria-label={copy.chapters}>
               {QURAN_CHAPTERS.map((chapter) => (
                 <button
                   key={chapter.id}
@@ -366,7 +373,9 @@ export function QuranMiniPlayer() {
                 >
                   <span>
                     <strong>{chapter.name}</strong>
-                    <small>Surah {String(chapter.id).padStart(3, '0')}</small>
+                    <small>
+                      {copy.surah} {String(chapter.id).padStart(3, '0')}
+                    </small>
                   </span>
                 </button>
               ))}

@@ -3,9 +3,10 @@ import type { StreakState } from '../../types/app'
 
 type StreakFlameProps = {
   streak: StreakState
+  label: string
 }
 
-export function StreakFlame({ streak }: StreakFlameProps) {
+export function StreakFlame({ streak, label }: StreakFlameProps) {
   const isLit = streak.current > 0
 
   return (
@@ -15,7 +16,7 @@ export function StreakFlame({ streak }: StreakFlameProps) {
       </div>
       <div className="streak-copy">
         <strong>{streak.current}</strong>
-        <span>day streak</span>
+        <span>{label}</span>
       </div>
       <small>{streak.todayCount}/{streak.dailyGoal}</small>
     </div>

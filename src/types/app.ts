@@ -1,9 +1,10 @@
 export type WidgetId =
   | 'pomodoro'
   | 'todo'
-  | 'notes'
   | 'youtube'
   | 'backgrounds'
+
+export type AppLanguage = 'fr' | 'en'
 
 export type WidgetLayout = {
   id: WidgetId
@@ -34,24 +35,24 @@ export type UploadedBackgroundRecord = {
   createdAt: number
 }
 
+export type TodoPriority = 'urgent' | 'high' | 'medium' | 'low' | 'later'
+export type TodoDifficulty = 'easy' | 'normal' | 'hard' | 'intense'
+
 export type TodoItem = {
   id: string
   text: string
+  priority: TodoPriority
+  difficulty: TodoDifficulty
+  rank: number
   completed: boolean
   active: boolean
   requiredPomodoros: number
   completedPomodoros: number
   createdAt: number
-}
-
-export type NoteItem = {
-  id: string
-  title: string
-  body: string
-  category: string
-  pinned: boolean
-  createdAt: number
   updatedAt: number
+  completedAt: number | null
+  repeatOf?: string
+  repeatIndex: number
 }
 
 export type TimerMode = 'focus' | 'shortBreak' | 'longBreak'
@@ -87,4 +88,12 @@ export type TaskPomodoroMemory = {
   targetPomodoros: number
   completedInTarget: number
   currentRun: number
+}
+
+export type MemoryStatus = {
+  available: boolean
+  keyCount: number
+  updatedAt: number | null
+  restored: boolean
+  error?: string
 }

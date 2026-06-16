@@ -3,7 +3,7 @@ import { YOUTUBE_DEFAULT_PLAYLIST_ID } from './defaults'
 const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/
 
 export type YoutubeTarget =
-  | { type: 'playlist'; playlistId: string }
+  | { type: 'playlist'; playlistId: string; startVideoId?: string }
   | { type: 'video'; videoId: string }
 
 export function normalizeYoutubeEmbed(input: string) {
@@ -29,30 +29,37 @@ export function parseYoutubeTarget(input: string): YoutubeTarget {
     const url = new URL(trimmed)
     const host = url.hostname.replace(/^www\./, '')
     const listId = cleanPlaylistId(url.searchParams.get('list'))
+    const queryVideoId = cleanVideoId(url.searchParams.get('v'))
+    const pathVideoId =
+      host === 'youtu.be'
+        ? cleanVideoId(url.pathname.split('/').filter(Boolean)[0])
+        : cleanVideoId(
+            url.pathname.startsWith('/embed/')
+              ? url.pathname.split('/').filter(Boolean)[1]
+              : '',
+          )
 
     if (listId) {
-      return { type: 'playlist', playlistId: listId }
+      return {
+        type: 'playlist',
+        playlistId: listId,
+        startVideoId: queryVideoId ?? pathVideoId ?? undefined,
+      }
     }
 
     if (host === 'youtu.be') {
-      const videoId = url.pathname.split('/').filter(Boolean)[0]
-      return videoId && YOUTUBE_ID_PATTERN.test(videoId)
-        ? { type: 'video', videoId }
+      return pathVideoId
+        ? { type: 'video', videoId: pathVideoId }
         : defaultYoutubeTarget()
     }
 
     if (host === 'youtube.com' || host === 'm.youtube.com') {
-      const videoId = url.searchParams.get('v')
-      const embedId = url.pathname.startsWith('/embed/')
-        ? url.pathname.split('/').filter(Boolean)[1]
-        : ''
-
-      if (videoId && YOUTUBE_ID_PATTERN.test(videoId)) {
-        return { type: 'video', videoId }
+      if (queryVideoId) {
+        return { type: 'video', videoId: queryVideoId }
       }
 
-      if (embedId && YOUTUBE_ID_PATTERN.test(embedId)) {
-        return { type: 'video', videoId: embedId }
+      if (pathVideoId) {
+        return { type: 'video', videoId: pathVideoId }
       }
     }
   } catch {
@@ -75,6 +82,11 @@ function videoEmbed(videoId: string) {
 function cleanPlaylistId(listId?: string | null) {
   const trimmed = listId?.trim()
   return trimmed || null
+}
+
+function cleanVideoId(videoId?: string | null) {
+  const trimmed = videoId?.trim()
+  return trimmed && YOUTUBE_ID_PATTERN.test(trimmed) ? trimmed : null
 }
 
 function playlistEmbed(listId: string) {

@@ -1,18 +1,35 @@
-import { Minus, Pause, Play, Plus, RotateCcw, Sparkle, Star } from 'lucide-react'
+import {
+  Coffee,
+  Flame,
+  Minus,
+  Moon,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  SkipForward,
+  Sparkle,
+  Star,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
+import type { ComponentType } from 'react'
+import type { AppCopy } from '../../lib/i18n'
 import { timerSeconds } from '../../lib/timer'
 import { clampPomodoros } from '../../lib/todos'
 import type { PomodoroRunState, TimerMode, TimerSettings } from '../../types/app'
 
 const TIMER_MODES: TimerMode[] = ['focus', 'shortBreak', 'longBreak']
 
-const TIMER_LABELS: Record<TimerMode, string> = {
-  focus: 'Focus',
-  shortBreak: 'Break',
-  longBreak: 'Long break',
-}
-
 const TIMER_BEEP_PEAK_GAIN = 0.16
+const TIMER_RING_SIZE = 164
+const TIMER_RING_CENTER = TIMER_RING_SIZE / 2
+const TIMER_RING_RADIUS = 72
+
+const modeIcons: Record<TimerMode, ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  focus: Flame,
+  shortBreak: Coffee,
+  longBreak: Moon,
+}
 
 function formatTime(seconds: number) {
   const minutes = Math.floor(seconds / 60)
@@ -57,6 +74,7 @@ function scheduleTimerChime(context: AudioContext) {
 }
 
 type PomodoroWidgetProps = {
+  copy: AppCopy['pomodoro']
   mode: TimerMode
   remaining: number
   isRunning: boolean
@@ -72,10 +90,12 @@ type PomodoroWidgetProps = {
       | ((current: PomodoroRunState) => PomodoroRunState),
   ) => void
   onTargetChange: (targetPomodoros: number) => void
+  onStartFreeFocus: () => void
   onFocusComplete: () => void
 }
 
 export function PomodoroWidget({
+  copy,
   mode,
   remaining,
   isRunning,
@@ -87,6 +107,7 @@ export function PomodoroWidget({
   onRunningChange,
   onRunChange,
   onTargetChange,
+  onStartFreeFocus,
   onFocusComplete,
 }: PomodoroWidgetProps) {
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -95,6 +116,11 @@ export function PomodoroWidget({
   const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
   const objectiveFinished = run.completedInTarget >= target
+  const canSkipBreak = mode !== 'focus' && !objectiveFinished
+  const duration = Math.max(timerSeconds(mode, timerSettings), 1)
+  const elapsed = Math.min(Math.max(duration - remaining, 0), duration)
+  const progress = objectiveFinished ? 100 : Math.round((elapsed / duration) * 100)
+  const ActiveModeIcon = modeIcons[mode]
 
   const getAudioContext = useCallback(() => {
     if (audioContextRef.current) {
@@ -256,14 +282,8 @@ export function PomodoroWidget({
     target,
   ])
 
-  const chooseMode = (nextMode: TimerMode) => {
-    interruptRun()
-    switchMode(nextMode, false)
-  }
-
   const startOrPause = () => {
     if (isRunning) {
-      interruptRun()
       onRunningChange(false)
       return
     }
@@ -280,24 +300,61 @@ export function PomodoroWidget({
     onTargetChange(clampPomodoros(target + delta))
   }
 
+  const skipBreak = () => {
+    switchMode('focus', run.autoCycle)
+  }
+
   return (
-    <div className="pomodoro-widget">
-      <div className="segmented-control" aria-label="Timer mode">
+    <div className={`pomodoro-widget mode-${mode}`}>
+      <div className="pomodoro-cycle" aria-label={copy.modeAria}>
         {TIMER_MODES.map((timerMode) => (
-          <button
+          <div
             key={timerMode}
-            className={timerMode === mode ? 'is-selected' : ''}
-            type="button"
-            onClick={() => chooseMode(timerMode)}
+            className={`cycle-step mode-${timerMode}${
+              timerMode === mode ? ' is-current' : ''
+            }`}
+            aria-current={timerMode === mode ? 'step' : undefined}
           >
-            {TIMER_LABELS[timerMode]}
-          </button>
+            <span>
+              {(() => {
+                const Icon = modeIcons[timerMode]
+                return <Icon size={15} strokeWidth={1.9} />
+              })()}
+            </span>
+            <strong>{copy.modes[timerMode]}</strong>
+          </div>
         ))}
       </div>
 
-      <div className="timer-readout">{formatTime(remaining)}</div>
+      <div className="timer-orbital" aria-label={copy.progress(progress)}>
+        <svg className="timer-ring" viewBox={`0 0 ${TIMER_RING_SIZE} ${TIMER_RING_SIZE}`}>
+          <circle
+            className="timer-ring-track"
+            cx={TIMER_RING_CENTER}
+            cy={TIMER_RING_CENTER}
+            r={TIMER_RING_RADIUS}
+            pathLength="100"
+          />
+          <circle
+            className="timer-ring-progress"
+            cx={TIMER_RING_CENTER}
+            cy={TIMER_RING_CENTER}
+            r={TIMER_RING_RADIUS}
+            pathLength="100"
+            strokeDasharray="100"
+            strokeDashoffset={100 - progress}
+          />
+        </svg>
+        <div className="timer-core">
+          <span className="timer-mode-mark" aria-hidden="true">
+            <ActiveModeIcon size={25} strokeWidth={1.85} />
+          </span>
+          <div className="timer-readout">{formatTime(remaining)}</div>
+          <small>{copy.modes[mode]}</small>
+        </div>
+      </div>
 
-      <div className="pomodoro-chain" aria-label="Continuous pomodoro streak">
+      <div className="pomodoro-chain" aria-label={copy.continuousAria}>
         {objectiveFinished ? (
           <div className="finished-banner" aria-live="polite">
             <span aria-hidden="true">
@@ -305,7 +362,7 @@ export function PomodoroWidget({
               <Sparkle size={13} strokeWidth={1.8} />
               <Star size={10} strokeWidth={1.8} />
             </span>
-            <strong>Finished!</strong>
+            <strong>{copy.finished}</strong>
           </div>
         ) : (
           <div className="star-row">
@@ -325,18 +382,20 @@ export function PomodoroWidget({
         <div className="chain-meta">
           <span>
             <Sparkle size={13} strokeWidth={1.8} />
-            {run.currentRun}/{target} continuous
+            {copy.continuous(run.currentRun, target)}
           </span>
-          <span>Best {run.bestRun}</span>
+          <span>{copy.best(run.bestRun)}</span>
         </div>
       </div>
 
       <div className="pomodoro-objective-panel">
-        <span>{activeTaskLabel ? `Current: ${activeTaskLabel}` : 'No task in progress'}</span>
-        <div className="goal-stepper small" aria-label="Pomodoro chain target">
+        <span>
+          {activeTaskLabel ? copy.currentTask(activeTaskLabel) : copy.freeFocus}
+        </span>
+        <div className="goal-stepper small" aria-label={copy.targetAria}>
           <button
             type="button"
-            aria-label="Decrease pomodoro chain target"
+            aria-label={copy.decreaseTarget}
             onClick={() => updateTarget(-1)}
           >
             <Minus size={13} strokeWidth={1.9} />
@@ -344,7 +403,7 @@ export function PomodoroWidget({
           <strong>{target}</strong>
           <button
             type="button"
-            aria-label="Increase pomodoro chain target"
+            aria-label={copy.increaseTarget}
             onClick={() => updateTarget(1)}
           >
             <Plus size={13} strokeWidth={1.9} />
@@ -352,21 +411,32 @@ export function PomodoroWidget({
         </div>
       </div>
 
-      <label className="autocycle-toggle">
-        <span>Auto cycle</span>
-        <input
-          type="checkbox"
-          checked={run.autoCycle}
-          onChange={(event) =>
-            onRunChange((current) => ({
-              ...current,
-              autoCycle: event.target.checked,
-            }))
-          }
-        />
-      </label>
+      <div className="pomodoro-quick-row">
+        <button
+          className={`free-pomodoro-button${activeTaskLabel ? '' : ' is-active'}`}
+          type="button"
+          onClick={onStartFreeFocus}
+        >
+          <Flame size={15} strokeWidth={1.85} />
+          {copy.freeButton}
+        </button>
 
-      <div className="timer-actions">
+        <label className="autocycle-toggle">
+          <span>{copy.autoCycle}</span>
+          <input
+            type="checkbox"
+            checked={run.autoCycle}
+            onChange={(event) =>
+              onRunChange((current) => ({
+                ...current,
+                autoCycle: event.target.checked,
+              }))
+            }
+          />
+        </label>
+      </div>
+
+      <div className={`timer-actions${canSkipBreak ? ' has-skip' : ''}`}>
         <button
           className="primary-action"
           type="button"
@@ -378,7 +448,7 @@ export function PomodoroWidget({
           ) : (
             <Play size={17} strokeWidth={1.9} />
           )}
-          {isRunning ? 'Cut' : 'Start'}
+          {isRunning ? copy.pause : copy.start}
         </button>
         <button
           className="ghost-action"
@@ -389,8 +459,14 @@ export function PomodoroWidget({
           }}
         >
           <RotateCcw size={16} strokeWidth={1.8} />
-          Reset
+          {copy.reset}
         </button>
+        {canSkipBreak ? (
+          <button className="ghost-action" type="button" onClick={skipBreak}>
+            <SkipForward size={16} strokeWidth={1.8} />
+            {copy.skipBreak}
+          </button>
+        ) : null}
       </div>
     </div>
   )

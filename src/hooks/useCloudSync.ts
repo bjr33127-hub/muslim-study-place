@@ -51,6 +51,13 @@ function syncedStatus(remote: CloudRemoteState): CloudSyncStatus {
   }
 }
 
+function snapshotsMatch(
+  local: CloudRemoteState['snapshot'],
+  remote: CloudRemoteState['snapshot'],
+) {
+  return JSON.stringify(local.values) === JSON.stringify(remote.values)
+}
+
 export function useCloudSync() {
   const client = useMemo(() => getSupabaseClient(), [])
   const configured = isSupabaseConfigured()
@@ -195,6 +202,19 @@ export function useCloudSync() {
         storedMeta.userId === profile.id &&
         storedMeta.revision === remote.revision
       ) {
+        if (!snapshotsMatch(local, remote.snapshot)) {
+          conflictRef.current = true
+          storePreMergeBackup(local)
+          setConflict({ local, remote })
+          setStatus({
+            configured: true,
+            lastSyncedAt: remote.updatedAt ? Date.parse(remote.updatedAt) : null,
+            phase: 'conflict',
+            revision: remote.revision,
+          })
+          return
+        }
+
         setStatus(syncedStatus(remote))
         return
       }

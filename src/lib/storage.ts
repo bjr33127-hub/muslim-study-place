@@ -106,6 +106,19 @@ export async function writeDurableStorage<T>(key: string, value: T) {
   }).catch(() => undefined)
 }
 
+async function deleteDurableStorage(key: DurableStorageKey) {
+  const db = await openAppDb()
+
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DURABLE_STATE_STORE, 'readwrite')
+    const request = tx.objectStore(DURABLE_STATE_STORE).delete(key)
+
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error)
+    tx.oncomplete = () => db.close()
+  }).catch(() => undefined)
+}
+
 export async function readDurableStorage<T>(key: string) {
   if (!isDurableStorageKey(key)) {
     return null
@@ -208,9 +221,24 @@ export async function importDurableSnapshot(payload: unknown) {
   const entries = Object.entries(snapshot.values).filter(([key]) =>
     isDurableStorageKey(key),
   ) as Array<[DurableStorageKey, unknown]>
+  const importedKeys = new Set(entries.map(([key]) => key))
 
   await Promise.all(
-    entries.map(([key, value]) => {
+    DURABLE_STORAGE_KEYS.map((key) => {
+      const entry = entries.find(([entryKey]) => entryKey === key)
+
+      if (!entry || !importedKeys.has(key)) {
+        try {
+          window.localStorage.removeItem(fullStorageKey(key))
+        } catch {
+          // Keep importing into IndexedDB even if localStorage refuses the write.
+        }
+
+        return deleteDurableStorage(key)
+      }
+
+      const [, value] = entry
+
       try {
         window.localStorage.setItem(fullStorageKey(key), JSON.stringify(value))
       } catch {

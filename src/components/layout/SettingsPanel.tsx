@@ -1,4 +1,4 @@
-import { Download, RotateCcw, Upload, X } from 'lucide-react'
+import { Download, Flame, RotateCcw, Upload, X } from 'lucide-react'
 import { WIDGET_ORDER } from '../../lib/defaults'
 import { LANGUAGES } from '../../lib/i18n'
 import type {
@@ -26,6 +26,7 @@ type SettingsPanelProps = {
     longBreakEvery: string
     focusFlame: string
     dailyFlameTarget: string
+    addStreakDay: string
     current: string
     best: string
     today: string
@@ -60,6 +61,7 @@ type SettingsPanelProps = {
   onResetLayout: () => void
   onToggleWidget: (id: WidgetId) => void
   onDailyGoalChange: (value: number) => void
+  onAddStreakDay: () => void
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
   onParticlesEnabledChange: (value: boolean) => void
@@ -84,6 +86,7 @@ export function SettingsPanel({
   onResetLayout,
   onToggleWidget,
   onDailyGoalChange,
+  onAddStreakDay,
   onTimerSettingChange,
   onBackgroundDimChange,
   onParticlesEnabledChange,
@@ -227,6 +230,14 @@ export function SettingsPanel({
           <span>{copy.best} {streak.best}</span>
           <span>{copy.today} {streak.todayCount}</span>
         </div>
+        <button
+          className="ghost-action full-width"
+          type="button"
+          onClick={onAddStreakDay}
+        >
+          <Flame size={15} strokeWidth={1.8} />
+          {copy.addStreakDay}
+        </button>
       </section>
 
       <section className="settings-section">

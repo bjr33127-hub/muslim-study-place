@@ -643,6 +643,17 @@ async function waitForDurableKey(page, key, text) {
   )
 }
 
+function dateKeyForOffset(days = 0) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
 async function addTask(page, text, priority, difficulty = 'normal') {
   const todoForm = page.locator('.todo-form')
 
@@ -662,6 +673,348 @@ async function assertFirstOpenTask(page, expectedText, message) {
   assert(firstTodoText && firstTodoText.includes(expectedText), message)
 }
 
+async function assertFlameStage(page, today, current, expectedStage) {
+  await page.evaluate(
+    ({ current, today }) => {
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current,
+          best: Math.max(current, 1),
+          lastActiveDate: today,
+          todayCount: 1,
+          dailyGoal: 1,
+          history: {
+            [today]: {
+              date: today,
+              count: 1,
+              goal: 1,
+              checkedIn: true,
+              completed: true,
+              source: 'check-in',
+            },
+          },
+        }),
+      )
+    },
+    { current, today },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.streak-flame')
+
+  const stage = await page.locator('.streak-flame').getAttribute('data-flame-stage')
+
+  assert(stage === expectedStage, `Expected flame stage ${expectedStage} for streak ${current}, got ${stage}`)
+}
+
+function installSupabaseMock(initialAppState = null) {
+  window.__mspSupabaseState = {
+    appState: initialAppState,
+    profiles: [],
+    rpcCalls: [],
+    session: null,
+    streak: {
+      current: 0,
+      best: 0,
+      lastActiveDate: null,
+      todayCount: 0,
+      dailyGoal: 1,
+      history: {},
+    },
+    subscribers: [],
+  }
+
+  const state = window.__mspSupabaseState
+  const user = {
+    id: 'qa-user-id',
+    email: 'qa@example.com',
+    user_metadata: {
+      full_name: 'QA Google',
+      avatar_url: '',
+    },
+  }
+  const today = () => {
+    const date = new Date()
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+  const writeDay = (source) => {
+    const key = today()
+    state.streak.history[key] = {
+      date: key,
+      count: state.streak.todayCount,
+      goal: state.streak.dailyGoal,
+      checkedIn: true,
+      completed: state.streak.todayCount >= state.streak.dailyGoal,
+      source,
+    }
+  }
+  const checkIn = () => {
+    const key = today()
+
+    if (state.streak.lastActiveDate !== key) {
+      state.streak.current += 1
+      state.streak.best = Math.max(state.streak.best, state.streak.current)
+      state.streak.lastActiveDate = key
+      state.streak.todayCount = 1
+    } else {
+      state.streak.todayCount = Math.max(state.streak.todayCount, 1)
+    }
+
+    writeDay('check-in')
+    return { ...state.streak, history: { ...state.streak.history } }
+  }
+  const activity = () => {
+    if (state.streak.lastActiveDate !== today()) {
+      return checkIn()
+    }
+
+    state.streak.todayCount += 1
+    writeDay('activity')
+    return { ...state.streak, history: { ...state.streak.history } }
+  }
+  const emit = (event) => {
+    state.subscribers.forEach((callback) => callback(event, state.session))
+  }
+  const ok = (data = null) => ({ data, error: null })
+
+  window.__MSP_SUPABASE_MOCK__ = {
+    auth: {
+      getSession: async () => ok({ session: state.session }),
+      onAuthStateChange: (callback) => {
+        state.subscribers.push(callback)
+
+        return {
+          data: {
+            subscription: {
+              unsubscribe: () => {
+                state.subscribers = state.subscribers.filter((item) => item !== callback)
+              },
+            },
+          },
+        }
+      },
+      signInWithOAuth: async () => {
+        state.session = { user }
+        window.setTimeout(() => emit('SIGNED_IN'), 0)
+        return ok({})
+      },
+      signOut: async () => {
+        state.session = null
+        emit('SIGNED_OUT')
+        return ok({})
+      },
+    },
+    from: (table) => ({
+      upsert: async (payload) => {
+        if (table === 'profiles') {
+          state.profiles.push(payload)
+        }
+
+        return ok({})
+      },
+      select: () => ({
+        maybeSingle: async () => {
+          if (table === 'user_app_state') {
+            return ok(state.appState)
+          }
+
+          return ok(null)
+        },
+      }),
+    }),
+    rpc: (name, args = {}) => {
+      state.rpcCalls.push({ name, args })
+
+      if (name === 'save_app_state') {
+        const expected = args.p_expected_revision
+
+        if (
+          state.appState &&
+          expected !== null &&
+          expected !== undefined &&
+          state.appState.revision !== expected
+        ) {
+          const error = new Error('revision_conflict')
+          const result = { data: null, error }
+
+          return { ...result, single: async () => result }
+        }
+
+        const revision = (state.appState?.revision || 0) + 1
+        state.appState = {
+          snapshot: args.p_snapshot,
+          revision,
+          updated_at: new Date().toISOString(),
+        }
+
+        return { ...ok(state.appState), single: async () => ok(state.appState) }
+      }
+
+      if (name === 'record_daily_check_in') {
+        return ok(checkIn())
+      }
+
+      if (name === 'record_streak_activity') {
+        return ok(activity())
+      }
+
+      if (name === 'set_daily_goal') {
+        state.streak.dailyGoal = Math.min(Math.max(Number(args.p_daily_goal) || 1, 1), 12)
+        writeDay(state.streak.history[today()]?.source || 'check-in')
+        return ok({ ...state.streak, history: { ...state.streak.history } })
+      }
+
+      return ok(null)
+    },
+  }
+}
+
+async function runCloudSyncQa(browser) {
+  const emptyCloudContext = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  })
+  await emptyCloudContext.addInitScript(installSupabaseMock, null)
+  await emptyCloudContext.addInitScript(() => {
+    localStorage.setItem(
+      'muslim-study-place:todos',
+      JSON.stringify([
+        {
+          id: 'qa-cloud-local',
+          text: 'Cloud local seed',
+          priority: 'medium',
+          difficulty: 'normal',
+          rank: 1,
+          completed: false,
+          active: true,
+          requiredPomodoros: 1,
+          completedPomodoros: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          completedAt: null,
+          repeatIndex: 0,
+        },
+      ]),
+    )
+  })
+  const emptyCloudPage = await emptyCloudContext.newPage()
+  await emptyCloudPage.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await emptyCloudPage.locator('.account-button').click()
+  await emptyCloudPage.getByRole('button', { name: 'Se connecter avec Google' }).click()
+  await emptyCloudPage.waitForFunction(() => window.__mspSupabaseState?.appState?.revision >= 1)
+  await emptyCloudPage.waitForFunction(() =>
+    window.__mspSupabaseState?.rpcCalls?.some((call) => call.name === 'record_daily_check_in'),
+  )
+  assert(
+    await emptyCloudPage.evaluate(() => {
+      const state = window.__mspSupabaseState
+      const todos = state.appState?.snapshot?.values?.todos || []
+
+      return (
+        state.profiles.length >= 1 &&
+        todos.some((todo) => todo.text === 'Cloud local seed') &&
+        state.rpcCalls.some((call) => call.name === 'save_app_state') &&
+        state.rpcCalls.some((call) => call.name === 'record_daily_check_in')
+      )
+    }),
+    'Empty cloud login should upload local progress and run server streak check-in',
+  )
+  await emptyCloudContext.close()
+
+  const remoteSnapshot = {
+    app: 'muslim-study-place',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    values: {
+      todos: [
+        {
+          id: 'qa-cloud-remote',
+          text: 'Remote cloud task',
+          priority: 'medium',
+          difficulty: 'normal',
+          rank: 1,
+          completed: false,
+          active: true,
+          requiredPomodoros: 1,
+          completedPomodoros: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          completedAt: null,
+          repeatIndex: 0,
+        },
+      ],
+    },
+  }
+  const conflictContext = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  })
+  await conflictContext.addInitScript(installSupabaseMock, {
+    snapshot: remoteSnapshot,
+    revision: 2,
+    updated_at: new Date().toISOString(),
+  })
+  await conflictContext.addInitScript(() => {
+    if (localStorage.getItem('muslim-study-place:cloud:lastRevision')) {
+      return
+    }
+
+    localStorage.setItem(
+      'muslim-study-place:todos',
+      JSON.stringify([
+        {
+          id: 'qa-cloud-conflict-local',
+          text: 'Local conflict task',
+          priority: 'medium',
+          difficulty: 'normal',
+          rank: 1,
+          completed: false,
+          active: true,
+          requiredPomodoros: 1,
+          completedPomodoros: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          completedAt: null,
+          repeatIndex: 0,
+        },
+      ]),
+    )
+  })
+  const conflictPage = await conflictContext.newPage()
+  await conflictPage.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await conflictPage.locator('.account-button').click()
+  await conflictPage.getByRole('button', { name: 'Se connecter avec Google' }).click()
+  await conflictPage.locator('.account-popover').getByText('Choix requis').waitFor({ state: 'visible' })
+  assert(
+    await conflictPage.getByRole('button', { name: 'Utiliser le cloud' }).isVisible(),
+    'Cloud conflict should offer the cloud version',
+  )
+  assert(
+    await conflictPage.getByRole('button', { name: 'Remplacer par ce PC' }).isVisible(),
+    'Cloud conflict should offer the local version',
+  )
+  await conflictPage.getByRole('button', { name: 'Utiliser le cloud' }).click()
+  await conflictPage.waitForLoadState('domcontentloaded')
+  await conflictPage.waitForTimeout(1000)
+  assert(
+    await conflictPage.evaluate(() => {
+      const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+      const revision = JSON.parse(localStorage.getItem('muslim-study-place:cloud:lastRevision') || '0')
+      const backup = JSON.parse(localStorage.getItem('muslim-study-place:cloud:preMergeBackup') || 'null')
+
+      return (
+        revision === 2 &&
+        backup?.values?.todos?.some((todo) => todo.text === 'Local conflict task') &&
+        todos.some((todo) => todo.text === 'Remote cloud task')
+      )
+    }),
+    'Using the cloud version should import remote data and preserve a local pre-merge backup',
+  )
+  await conflictContext.close()
+}
+
 async function main() {
   const browser = await chromium.launch()
   const backgroundManifestPath = path.join(__dirname, '..', 'public', 'backgrounds', 'manifest.json')
@@ -673,6 +1026,7 @@ async function main() {
   await runYoutubeTitleDowngradeQa(browser)
   await runYoutubeJsonpFallbackQa(browser)
   await runYoutubeNoApiIframeQa(browser)
+  await runCloudSyncQa(browser)
 
   const context = await browser.newContext({
     acceptDownloads: true,
@@ -787,7 +1141,32 @@ async function main() {
     noteFrames: document.querySelectorAll('.widget-frame-notes, .notes-widget').length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     topbarText: document.querySelector('.topbar-actions')?.textContent || '',
-    privacy: document.querySelector('.privacy-chip')?.textContent || '',
+    privacyChipCount: document.querySelectorAll('.privacy-chip').length,
+    backgroundChipCount: document.querySelectorAll('.background-chip').length,
+    backgroundWatermark: document.querySelector('.background-watermark')?.textContent?.trim() || '',
+    unlockCardCount: document.querySelectorAll('.streak-unlock-card').length,
+    badgeSizes: Array.from(
+      document.querySelectorAll('.streak-flame, .best-run-star, .total-stars-counter'),
+    ).map((element) => {
+      const rect = element.getBoundingClientRect()
+
+      return {
+        height: Math.round(rect.height),
+        width: Math.round(rect.width),
+      }
+    }),
+    comboRing: (() => {
+      const ring = document.querySelector('.best-star-orb .combo-ring')
+      const style = ring ? getComputedStyle(ring) : null
+
+      return style
+        ? {
+            animationDuration: style.animationDuration,
+            borderTopWidth: style.borderTopWidth,
+            opacity: style.opacity,
+          }
+        : null
+    })(),
     memoryStore: Boolean(indexedDB),
   }))
 
@@ -797,7 +1176,54 @@ async function main() {
   assert(initial.dockButtons === 4, 'Expected four dock buttons')
   assert(initial.noteFrames === 0, 'Notes widget should not render')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
-  assert(initial.privacy.includes('Local'), 'Local privacy chip missing')
+  assert(initial.privacyChipCount === 0, 'Local privacy chip should not render')
+  assert(initial.backgroundChipCount === 0, 'Background chip should not render in the topbar')
+  assert(!initial.topbarText.includes('Local'), 'Topbar should not include the Local label')
+  assert(!initial.topbarText.includes('Train'), 'Topbar should not include the background name')
+  assert(initial.backgroundWatermark === 'Train', 'Background name should render as a discreet watermark')
+  assert(initial.unlockCardCount === 0, 'Daily check-in alone should not show the task unlock animation')
+  assert(initial.badgeSizes.length === 3, 'Expected three topbar metric badges')
+  assert(
+    Math.max(...initial.badgeSizes.map((size) => size.width)) -
+      Math.min(...initial.badgeSizes.map((size) => size.width)) <=
+      1,
+    'Topbar metric badges should have matching widths',
+  )
+  assert(
+    Math.max(...initial.badgeSizes.map((size) => size.height)) -
+      Math.min(...initial.badgeSizes.map((size) => size.height)) <=
+      1,
+    'Topbar metric badges should have matching heights',
+  )
+  assert(initial.comboRing, 'Best run combo ring missing')
+  assert(
+    Number.parseFloat(initial.comboRing.animationDuration) >= 6.8,
+    'Best run combo ring should spin slowly',
+  )
+  assert(
+    Number.parseFloat(initial.comboRing.opacity) <= 0.7,
+    'Best run combo ring should be visually discreet',
+  )
+  assert(
+    Number.parseFloat(initial.comboRing.borderTopWidth) <= 1.5,
+    'Best run combo ring should be thin',
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const reducedUnlockAnimation = await page.evaluate(() => {
+    const shell = document.querySelector('.streak-shell')
+    const button = document.querySelector('.streak-flame')
+
+    shell?.classList.add('is-unlocking')
+    const animationName = button ? getComputedStyle(button).animationName : ''
+    shell?.classList.remove('is-unlocking')
+
+    return animationName
+  })
+  assert(
+    reducedUnlockAnimation === 'none',
+    'Reduced motion should disable the streak unlock badge animation',
+  )
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   assert(initial.memoryStore, 'IndexedDB should be available for durable memory')
   assert(backgroundManifest.length === 53, 'Expected 53 image entries in the background manifest')
   for (const backgroundId of [
@@ -817,10 +1243,134 @@ async function main() {
     'Train video background should be active by default',
   )
 
+  const today = dateKeyForOffset(0)
+  const yesterday = dateKeyForOffset(-1)
+  const twoDaysAgo = dateKeyForOffset(-2)
+
+  await page.evaluate(
+    ({ yesterday }) => {
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current: 2,
+          best: 5,
+          lastActiveDate: yesterday,
+          todayCount: 3,
+          dailyGoal: 2,
+        }),
+      )
+    },
+    { yesterday },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(
+    ({ today }) => {
+      const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+      return (
+        streak.current === 3 &&
+        streak.best === 5 &&
+        streak.lastActiveDate === today &&
+        streak.todayCount === 1 &&
+        streak.dailyGoal === 2 &&
+        streak.history?.[today]?.count === 1 &&
+        streak.history?.[today]?.goal === 2 &&
+        streak.history?.[today]?.checkedIn === true
+      )
+    },
+    { today },
+  )
+  assert(await page.locator('.streak-flame.is-lit').isVisible(), 'Daily check-in did not light the streak flame')
+  assert(
+    await page.locator('.streak-unlock-card').count() === 0,
+    'Daily check-in should not trigger the task unlock card',
+  )
+  assert(
+    await page.evaluate(() => localStorage.getItem('muslim-study-place:streak:lastTaskUnlockDate') === null),
+    'Daily check-in should not set the task unlock lock date',
+  )
+  await page.locator('.streak-flame').click()
+  assert(await page.getByRole('dialog', { name: 'Streak focus' }).isVisible(), 'Streak panel did not open')
+  assert(await page.locator('.streak-popover .streak-day').count() === 7, 'Streak panel should render seven week days')
+  await page.getByLabel('Fermer la streak focus').click()
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(700)
+  assert(
+    await page.evaluate(
+      ({ today }) => {
+        const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+        return (
+          streak.current === 3 &&
+          streak.best === 5 &&
+          streak.lastActiveDate === today &&
+          streak.todayCount === 1 &&
+          streak.history?.[today]?.count === 1
+        )
+      },
+      { today },
+    ),
+    'Reloading on the same day should not double-count the streak',
+  )
+  await page.evaluate(
+    ({ twoDaysAgo }) => {
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current: 4,
+          best: 6,
+          lastActiveDate: twoDaysAgo,
+          todayCount: 2,
+          dailyGoal: 1,
+        }),
+      )
+    },
+    { twoDaysAgo },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(
+    ({ today }) => {
+      const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+      return (
+        streak.current === 1 &&
+        streak.best === 6 &&
+        streak.lastActiveDate === today &&
+        streak.todayCount === 1 &&
+        streak.history?.[today]?.count === 1
+      )
+    },
+    { today },
+  )
+
   await page.locator('.settings-trigger').click()
   assert(await page.getByRole('heading', { name: 'Parametres' }).isVisible(), 'French settings title missing')
   assert(await page.getByText('Memoire locale').isVisible(), 'Memory settings section missing')
+  await page.getByRole('button', { name: 'Simuler +1 jour' }).click()
+  await page.locator('.streak-flame.is-igniting').waitFor({ state: 'visible' })
+  await page.locator('.streak-unlock-card').waitFor({ state: 'visible' })
+  assert(
+    await page.locator('.streak-unlock-card').getByText('Simulation +1 jour').isVisible(),
+    'Simulating a streak day should show the unlock animation card',
+  )
+  await page.locator('.streak-unlock-day.is-unlocking-target.is-unlocked').waitFor({ state: 'visible' })
+  await page.waitForFunction(() => {
+    const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+    return (
+      streak.current === 2 &&
+      streak.best === 6 &&
+      streak.todayCount === 1 &&
+      Object.values(streak.history || {}).some((day) => day.source === 'manual')
+    )
+  })
+  assert(
+    await page.evaluate(() => localStorage.getItem('muslim-study-place:streak:lastTaskUnlockDate') === null),
+    'Simulating a streak day should not consume the real task unlock lock',
+  )
   assert(await page.getByLabel('Notes').count() === 0, 'Notes should not appear in settings or dock')
+  await page.locator('.settings-trigger').click()
+  assert(await page.getByRole('heading', { name: 'Parametres' }).isVisible(), 'French settings should reopen after simulation')
   await page.getByLabel('Langue de l interface').selectOption('en')
   await page.waitForFunction(() => document.documentElement.lang === 'en')
   assert(await page.getByRole('heading', { name: 'Settings' }).isVisible(), 'English settings title missing after language switch')
@@ -911,6 +1461,22 @@ async function main() {
       .isVisible(),
     'Difficulty badge did not render',
   )
+  const difficultyOptionStyles = await page
+    .locator('.todo-difficulty-select select option')
+    .first()
+    .evaluate((option) => {
+      const style = getComputedStyle(option)
+
+      return {
+        background: style.backgroundColor,
+        color: style.color,
+      }
+    })
+  assert(
+    difficultyOptionStyles.background === 'rgb(21, 23, 19)' &&
+      difficultyOptionStyles.color === 'rgb(248, 239, 210)',
+    'Difficulty select options should use a readable dark popup style',
+  )
 
   const sortOptions = await page.getByLabel('Sort tasks').locator('option').evaluateAll((options) =>
     options.map((option) => option.value),
@@ -959,6 +1525,21 @@ async function main() {
   const alphaDoneGroup = page.locator('.todo-group-row').filter({ hasText: 'Alpha manual' }).first()
   assert(await alphaDoneGroup.isVisible(), 'Completed Alpha group is missing')
   assert(await alphaDoneGroup.getByText('1 done').isVisible(), 'Initial completed group count is wrong')
+  await page.locator('.streak-unlock-card').waitFor({ state: 'visible' })
+  assert(
+    await page.locator('.streak-unlock-card').getByText('Day unlocked').isVisible(),
+    'First completed task should show the day unlock card',
+  )
+  await page.locator('.streak-unlock-day.is-unlocking-target.is-unlocked').waitFor({ state: 'visible' })
+  assert(
+    await page.evaluate(
+      ({ today }) =>
+        localStorage.getItem('muslim-study-place:streak:lastTaskUnlockDate') === today,
+      { today },
+    ),
+    'First completed task should set the daily unlock lock date',
+  )
+  await page.locator('.streak-unlock-card').waitFor({ state: 'hidden', timeout: 4500 })
   await alphaDoneGroup.getByLabel('Redo Alpha manual').click()
   const pendingRedoButton = alphaDoneGroup.getByLabel('A redo of Alpha manual is already open')
   assert(await pendingRedoButton.isDisabled(), 'Completed group should block duplicate redo while a redo is open')
@@ -975,6 +1556,11 @@ async function main() {
   assert(await alphaRedoRow.getByText('In progress').isVisible(), 'Started redo task should show In progress')
   await alphaRedoRow.getByLabel('Toggle Alpha manual').click()
   await page.getByRole('button', { name: 'Done' }).click()
+  await page.waitForTimeout(500)
+  assert(
+    await page.locator('.streak-unlock-card').count() === 0,
+    'Second completed task on the same day should not replay the day unlock card',
+  )
   const alphaGroups = page.locator('.todo-group-row').filter({ hasText: 'Alpha manual' })
   assert(await alphaGroups.count() === 1, 'Redo completion should stack into one completed group')
   assert(await alphaGroups.first().getByText('2 done').isVisible(), 'Stacked completed group count is wrong')
@@ -1182,12 +1768,201 @@ async function main() {
     }),
     'Free pomodoro should preserve existing tasks without activating or creating one',
   )
-  const freeFocusState = await page.evaluate(() => ({
-    run: localStorage.getItem('muslim-study-place:pomodoroRun') || '',
+  const freeFocusState = await page.evaluate(({ today }) => ({
+    run: JSON.parse(localStorage.getItem('muslim-study-place:pomodoroRun') || '{}'),
     streak: localStorage.getItem('muslim-study-place:streak') || '',
-  }))
-  assert(freeFocusState.run.includes('"totalStars":1'), 'Free pomodoro did not add a star')
+    today,
+  }), { today })
+  assert(freeFocusState.run.totalStars === 1, 'Free pomodoro did not add a star')
+  assert(
+    freeFocusState.run.starHistory?.[freeFocusState.today]?.stars === 1,
+    'Free pomodoro did not record the star history for today',
+  )
   assert(freeFocusState.streak.includes('"todayCount"'), 'Free pomodoro did not record focus activity')
+
+  await page.evaluate(
+    ({ today }) => {
+      localStorage.setItem(
+        'muslim-study-place:todos',
+        JSON.stringify([
+          {
+            id: 'qa-skip-focus',
+            text: 'Skip focus target',
+            priority: 'medium',
+            difficulty: 'normal',
+            rank: 1,
+            completed: false,
+            active: true,
+            requiredPomodoros: 2,
+            completedPomodoros: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            completedAt: null,
+            repeatIndex: 0,
+          },
+        ]),
+      )
+      localStorage.setItem('muslim-study-place:taskPomodoroMemory', '{}')
+      localStorage.setItem('muslim-study-place:timer:remaining', '120')
+      localStorage.setItem('muslim-study-place:timer:mode', '"focus"')
+      localStorage.setItem('muslim-study-place:timer:running', 'false')
+      localStorage.setItem(
+        'muslim-study-place:pomodoroRun',
+        JSON.stringify({
+          targetPomodoros: 2,
+          completedInTarget: 0,
+          currentRun: 0,
+          bestRun: 0,
+          totalStars: 0,
+          lastStarAt: 0,
+          autoCycle: false,
+        }),
+      )
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current: 2,
+          best: 2,
+          lastActiveDate: today,
+          todayCount: 1,
+          dailyGoal: 1,
+        }),
+      )
+    },
+    { today },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  await page.locator('.pomodoro-widget').getByRole('button', { name: 'Skip' }).click()
+  await page.locator('.best-run-star.is-bursting').waitFor({ state: 'visible' })
+  await page.locator('.total-stars-counter.is-showering').waitFor({ state: 'visible' })
+  await page.waitForFunction(
+    () => localStorage.getItem('muslim-study-place:timer:mode') === '"shortBreak"',
+  )
+  assert(await page.getByText('05:00').isVisible(), 'Skipping focus did not move to the short break')
+  assert(
+    await page.evaluate(({ today }) => {
+      const run = JSON.parse(localStorage.getItem('muslim-study-place:pomodoroRun') || '{}')
+      const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+      const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+      return (
+        run.totalStars === 1 &&
+        run.currentRun === 1 &&
+        run.bestRun === 1 &&
+        run.completedInTarget === 1 &&
+        run.starHistory?.[today]?.stars === 1 &&
+        run.starHistory?.[today]?.bestRun === 1 &&
+        todos[0]?.completedPomodoros === 1 &&
+        todos[0]?.completed === false &&
+        streak.current === 2 &&
+        streak.todayCount === 2 &&
+        streak.history?.[today]?.count === 2 &&
+        streak.history?.[today]?.source === 'activity' &&
+        localStorage.getItem('muslim-study-place:timer:running') === 'false'
+      )
+    }, { today }),
+    'Skipping focus should count as a completed focus without auto-starting the break',
+  )
+  await page.getByRole('button', { name: 'Open best pomodoro run' }).click()
+  assert(await page.getByRole('dialog', { name: 'Best run' }).isVisible(), 'Best run panel did not open')
+  assert(await page.locator('.best-run-popover .metric-day').count() === 7, 'Best run panel should render seven week days')
+  assert(
+    await page.locator('.best-run-popover').getByText('Current combo').count() >= 1,
+    'Best run panel missing current combo stat',
+  )
+  await page.getByLabel('Close best run').click()
+  await page.getByRole('button', { name: 'Open total stars' }).click()
+  assert(await page.getByRole('dialog', { name: 'Total stars' }).isVisible(), 'Total stars panel did not open')
+  assert(await page.locator('.total-stars-popover .metric-day').count() === 7, 'Total stars panel should render seven week days')
+  assert(
+    await page.locator('.total-stars-popover').getByText('Best day').count() >= 1,
+    'Total stars panel missing best day stat',
+  )
+  await page.getByLabel('Close total stars').click()
+
+  await page.evaluate(
+    ({ today }) => {
+      localStorage.removeItem('muslim-study-place:streak:lastTaskUnlockDate')
+      localStorage.setItem(
+        'muslim-study-place:todos',
+        JSON.stringify([
+          {
+            id: 'qa-pomodoro-unlock',
+            text: 'Pomodoro unlock target',
+            priority: 'medium',
+            difficulty: 'normal',
+            rank: 1,
+            completed: false,
+            active: true,
+            requiredPomodoros: 1,
+            completedPomodoros: 0,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            completedAt: null,
+            repeatIndex: 0,
+          },
+        ]),
+      )
+      localStorage.setItem('muslim-study-place:taskPomodoroMemory', '{}')
+      localStorage.setItem('muslim-study-place:timer:remaining', '120')
+      localStorage.setItem('muslim-study-place:timer:mode', '"focus"')
+      localStorage.setItem('muslim-study-place:timer:running', 'false')
+      localStorage.setItem(
+        'muslim-study-place:pomodoroRun',
+        JSON.stringify({
+          targetPomodoros: 1,
+          completedInTarget: 0,
+          currentRun: 0,
+          bestRun: 0,
+          totalStars: 0,
+          lastStarAt: 0,
+          autoCycle: false,
+        }),
+      )
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current: 4,
+          best: 4,
+          lastActiveDate: today,
+          todayCount: 1,
+          dailyGoal: 1,
+          history: {
+            [today]: {
+              date: today,
+              count: 1,
+              goal: 1,
+              checkedIn: true,
+              completed: true,
+              source: 'check-in',
+            },
+          },
+        }),
+      )
+    },
+    { today },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  await page.locator('.pomodoro-widget').getByRole('button', { name: 'Skip' }).click()
+  await page.locator('.streak-unlock-card').waitFor({ state: 'visible' })
+  await page.locator('.streak-unlock-day.is-unlocking-target.is-unlocked').waitFor({ state: 'visible' })
+  assert(
+    await page.evaluate(({ today }) => {
+      const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+      const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
+
+      return (
+        localStorage.getItem('muslim-study-place:streak:lastTaskUnlockDate') === today &&
+        todos[0]?.completed === true &&
+        todos[0]?.completedPomodoros === 1 &&
+        streak.todayCount === 2 &&
+        streak.history?.[today]?.source === 'activity'
+      )
+    }, { today }),
+    'Pomodoro-completed task should unlock the current streak day once',
+  )
 
   await page.evaluate(() => {
     localStorage.setItem('muslim-study-place:timer:remaining', '42')
@@ -1213,6 +1988,11 @@ async function main() {
     () => localStorage.getItem('muslim-study-place:timer:mode') === '"focus"',
   )
   assert(await page.getByText('25:00').isVisible(), 'Skipping a break did not return to focus')
+
+  await assertFlameStage(page, today, 1, 'ember')
+  await assertFlameStage(page, today, 7, 'verdant')
+  await assertFlameStage(page, today, 30, 'azure')
+  await assertFlameStage(page, today, 100, 'ultimate')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })

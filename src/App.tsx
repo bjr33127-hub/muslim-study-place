@@ -10,6 +10,7 @@ import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
 import { YoutubeWidget } from './components/widgets/YoutubeWidget'
+import { useCloudSync } from './hooks/useCloudSync'
 import { usePersistentState } from './hooks/usePersistentState'
 import {
   BUILT_IN_BACKGROUNDS,
@@ -25,7 +26,20 @@ import {
   listUploadedBackgrounds,
   saveUploadedBackground,
 } from './lib/backgroundDb'
-import { normalizeStreak, recordStreakActivity } from './lib/streak'
+import {
+  recordCloudDailyCheckIn,
+  recordCloudStreakActivity,
+  setCloudStreakDailyGoal,
+} from './lib/cloudSync'
+import {
+  addSimulatedStreakDay,
+  millisecondsUntilNextLocalMidnight,
+  normalizeStreak,
+  recordDailyCheckIn,
+  recordStreakActivity,
+  setStreakDailyGoal,
+  todayKey,
+} from './lib/streak'
 import { normalizeTimerSettings, timerSeconds } from './lib/timer'
 import {
   clampPomodoros,
@@ -43,6 +57,7 @@ import {
   getCopy,
   normalizeLanguage,
 } from './lib/i18n'
+import { normalizePomodoroRun } from './lib/pomodoroRun'
 import {
   buildDurableSnapshot,
   getDurableStorageStatus,
@@ -53,6 +68,7 @@ import type {
   BackgroundAsset,
   MemoryStatus,
   PomodoroRunState,
+  StreakUnlockCue,
   TaskPomodoroMemory,
   TimerSettings,
   TimerMode,
@@ -71,6 +87,7 @@ const widgetIcons: Record<WidgetId, ReactNode> = {
 }
 
 const CURRENT_LAYOUT_VERSION = 11
+const STREAK_TASK_UNLOCK_KEY = 'muslim-study-place:streak:lastTaskUnlockDate'
 
 const DEFAULT_MEMORY_STATUS: MemoryStatus = {
   available: false,
@@ -182,6 +199,7 @@ function App() {
   )
   const language = normalizeLanguage(languageState)
   const copy = useMemo(() => getCopy(language), [language])
+  const cloudSync = useCloudSync()
   const widgetLabels = copy.widgets
   const [storedLayouts, setLayouts] = usePersistentState(
     'widgetLayouts',
@@ -232,22 +250,33 @@ function App() {
         : undefined,
     [activeTask, activeTaskMemory, timerSettings],
   )
-  const run = useMemo(
-    () => ({
-      ...DEFAULT_POMODORO_RUN,
-      ...pomodoroRun,
-      ...(syncedActiveTaskMemory
-        ? {
-            targetPomodoros: syncedActiveTaskMemory.targetPomodoros,
-            completedInTarget: syncedActiveTaskMemory.completedInTarget,
-            currentRun: syncedActiveTaskMemory.currentRun,
-          }
-        : {}),
-    }),
-    [pomodoroRun, syncedActiveTaskMemory],
+  const normalizedPomodoroRun = useMemo(
+    () => normalizePomodoroRun(pomodoroRun),
+    [pomodoroRun],
   )
+  const run = useMemo(
+    () =>
+      normalizePomodoroRun({
+        ...normalizedPomodoroRun,
+        ...(syncedActiveTaskMemory
+          ? {
+              targetPomodoros: syncedActiveTaskMemory.targetPomodoros,
+              completedInTarget: syncedActiveTaskMemory.completedInTarget,
+              currentRun: syncedActiveTaskMemory.currentRun,
+            }
+          : {}),
+      }),
+    [normalizedPomodoroRun, syncedActiveTaskMemory],
+  )
+  const previousRunRef = useRef(run)
+  const [bestRunBurstKey, setBestRunBurstKey] = useState(0)
   const [streakState, setStreakState] = usePersistentState('streak', DEFAULT_STREAK)
   const streak = useMemo(() => normalizeStreak(streakState), [streakState])
+  const previousStreakRef = useRef(streak)
+  const [streakIgniteKey, setStreakIgniteKey] = useState(0)
+  const lastTaskUnlockDateRef = useRef<string | null>(null)
+  const [streakUnlockCue, setStreakUnlockCue] =
+    useState<StreakUnlockCue | null>(null)
   const [backgroundDim, setBackgroundDim] = usePersistentState(
     'settings:backgroundDim',
     72,
@@ -275,8 +304,88 @@ function App() {
   }, [language, languageState, setLanguageState])
 
   useEffect(() => {
+    const previous = previousStreakRef.current
+    const newActiveDay = previous.lastActiveDate !== streak.lastActiveDate
+    const streakGrew = streak.current > previous.current
+
+    if (newActiveDay || streakGrew) {
+      setStreakIgniteKey(Date.now())
+    }
+
+    previousStreakRef.current = streak
+  }, [streak])
+
+  useEffect(() => {
+    const previous = previousRunRef.current
+
+    if (run.bestRun > previous.bestRun) {
+      setBestRunBurstKey(run.lastStarAt || Date.now())
+    }
+
+    previousRunRef.current = run
+  }, [run])
+
+  useEffect(() => {
     document.documentElement.lang = language
   }, [language])
+
+  const canUseCloudStreak = Boolean(
+    cloudSync.client &&
+      cloudSync.user &&
+      cloudSync.status.phase !== 'conflict' &&
+      cloudSync.status.phase !== 'offline' &&
+      cloudSync.status.phase !== 'error',
+  )
+
+  const checkInForToday = useCallback(() => {
+    if (canUseCloudStreak && cloudSync.client) {
+      void recordCloudDailyCheckIn(cloudSync.client)
+        .then(setStreakState)
+        .catch(() => {
+          setStreakState((current) => recordDailyCheckIn(normalizeStreak(current)))
+        })
+      return
+    }
+
+    setStreakState((current) => recordDailyCheckIn(normalizeStreak(current)))
+  }, [canUseCloudStreak, cloudSync.client, setStreakState])
+
+  useEffect(() => {
+    checkInForToday()
+  }, [checkInForToday, streak.lastActiveDate])
+
+  useEffect(() => {
+    let midnightTimeout = 0
+
+    const scheduleMidnightCheckIn = () => {
+      window.clearTimeout(midnightTimeout)
+      midnightTimeout = window.setTimeout(() => {
+        checkInForToday()
+        scheduleMidnightCheckIn()
+      }, millisecondsUntilNextLocalMidnight())
+    }
+
+    const reconcileDailyCheckIn = () => {
+      checkInForToday()
+      scheduleMidnightCheckIn()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        reconcileDailyCheckIn()
+      }
+    }
+
+    scheduleMidnightCheckIn()
+    window.addEventListener('focus', reconcileDailyCheckIn)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearTimeout(midnightTimeout)
+      window.removeEventListener('focus', reconcileDailyCheckIn)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [checkInForToday])
 
   const refreshMemoryStatus = useCallback((restored = false) => {
     void getDurableStorageStatus(restored).then(setMemoryStatus)
@@ -564,34 +673,97 @@ function App() {
   }
 
   const recordActivity = useCallback(() => {
+    if (canUseCloudStreak && cloudSync.client) {
+      void recordCloudStreakActivity(cloudSync.client)
+        .then(setStreakState)
+        .catch(() => {
+          setStreakState((current) => recordStreakActivity(normalizeStreak(current)))
+        })
+      return
+    }
+
     setStreakState((current) => recordStreakActivity(normalizeStreak(current)))
-  }, [setStreakState])
+  }, [canUseCloudStreak, cloudSync.client, setStreakState])
+
+  const playStreakUnlockCue = useCallback(
+    (cue: Partial<Omit<StreakUnlockCue, 'key'>> = {}) => {
+      setStreakUnlockCue({
+        key: Date.now(),
+        date: cue.date ?? todayKey(),
+        taskLabel: cue.taskLabel,
+        subtitle: cue.subtitle,
+      })
+    },
+    [],
+  )
+
+  const triggerTaskUnlock = useCallback((taskLabel?: string) => {
+    const today = todayKey()
+    let lastUnlockDate = lastTaskUnlockDateRef.current
+
+    try {
+      lastUnlockDate =
+        window.localStorage.getItem(STREAK_TASK_UNLOCK_KEY) ?? lastUnlockDate
+    } catch {
+      // Keep the visual lock in memory when localStorage is unavailable.
+    }
+
+    if (lastUnlockDate === today) {
+      return
+    }
+
+    lastTaskUnlockDateRef.current = today
+
+    try {
+      window.localStorage.setItem(STREAK_TASK_UNLOCK_KEY, today)
+    } catch {
+      // Non-critical UI cue; streak data remains the source of truth.
+    }
+
+    playStreakUnlockCue({ date: today, taskLabel })
+  }, [playStreakUnlockCue])
 
   const commitTodos = useCallback(
     (nextTodos: TodoItem[], recordManualCompletion = false) => {
       const normalized = normalizeTodos(nextTodos)
 
       if (recordManualCompletion) {
-        const completedNow = normalized.some((todo) => {
+        const completedTask = normalized.find((todo) => {
           const before = todos.find((item) => item.id === todo.id)
           return before && !before.completed && todo.completed
         })
 
-        if (completedNow) {
+        if (completedTask) {
           recordActivity()
+          triggerTaskUnlock(completedTask.text)
         }
       }
 
       setTodos(normalized)
     },
-    [recordActivity, setTodos, todos],
+    [recordActivity, setTodos, todos, triggerTaskUnlock],
   )
 
   const updateDailyGoal = (value: number) => {
-    setStreakState((current) => ({
-      ...normalizeStreak(current),
-      dailyGoal: Math.min(Math.max(value || 1, 1), 12),
-    }))
+    setStreakState((current) => setStreakDailyGoal(normalizeStreak(current), value))
+
+    if (canUseCloudStreak && cloudSync.client) {
+      void setCloudStreakDailyGoal(cloudSync.client, value).then(setStreakState)
+    }
+  }
+
+  const addTemporaryStreakDay = () => {
+    if (cloudSync.user) {
+      setStreakIgniteKey(Date.now())
+      playStreakUnlockCue({ subtitle: copy.streak.unlockSimulated })
+      setSettingsOpen(false)
+      return
+    }
+
+    setStreakState((current) => addSimulatedStreakDay(normalizeStreak(current)))
+    setStreakIgniteKey(Date.now())
+    playStreakUnlockCue({ subtitle: copy.streak.unlockSimulated })
+    setSettingsOpen(false)
   }
 
   const updateTimerSetting = (key: keyof TimerSettings, value: number) => {
@@ -1011,12 +1183,16 @@ function App() {
       | PomodoroRunState
       | ((current: PomodoroRunState) => PomodoroRunState),
   ) => {
-    const nextRun = typeof value === 'function' ? value(run) : value
+    const nextRun = normalizePomodoroRun(
+      typeof value === 'function' ? value(run) : value,
+    )
 
-    setPomodoroRun((current) => ({
-      ...current,
-      ...nextRun,
-    }))
+    setPomodoroRun((current) =>
+      normalizePomodoroRun({
+        ...normalizePomodoroRun(current),
+        ...nextRun,
+      }),
+    )
 
     if (!activeTask) {
       return
@@ -1138,12 +1314,13 @@ function App() {
     updateTaskPomodoro(activeTask.id, 1, false)
 
     if (beforeRemaining <= 1) {
+      triggerTaskUnlock(activeTask.text)
       setPomodoroRun((current) => ({
         ...current,
         targetPomodoros: Math.max(current.targetPomodoros, 1),
       }))
     }
-  }, [activeTask, recordActivity, setPomodoroRun, updateTaskPomodoro])
+  }, [activeTask, recordActivity, setPomodoroRun, triggerTaskUnlock, updateTaskPomodoro])
 
   const renderWidget = (id: WidgetId) => {
     switch (id) {
@@ -1208,14 +1385,27 @@ function App() {
         dim={backgroundDim}
         particlesEnabled={particlesEnabled}
       />
+      <span className="background-watermark" aria-label={activeBackground.label}>
+        {activeBackground.label}
+      </span>
       <TopBar
         copy={copy}
-        currentBackground={activeBackground.label}
         streak={streak}
-        bestPomodoroRun={run.bestRun}
-        totalStars={run.totalStars}
+        streakIgniteKey={streakIgniteKey}
+        streakUnlockCue={streakUnlockCue}
+        run={run}
         starBurstKey={run.lastStarAt}
+        bestRunBurstKey={bestRunBurstKey}
+        cloudUser={cloudSync.user}
+        cloudStatus={cloudSync.status}
+        cloudConflict={cloudSync.conflict}
         onOpenSettings={() => setSettingsOpen(true)}
+        onCloudSignIn={cloudSync.signIn}
+        onCloudSignOut={cloudSync.signOut}
+        onCloudSyncNow={cloudSync.syncNow}
+        onUseCloudVersion={cloudSync.useCloudVersion}
+        onUseLocalVersion={cloudSync.useLocalVersion}
+        onExportLocalBackup={cloudSync.exportLocalBackup}
       />
       <SettingsPanel
         copy={copy.settings}
@@ -1234,6 +1424,7 @@ function App() {
         onResetLayout={resetLayout}
         onToggleWidget={toggleWidget}
         onDailyGoalChange={updateDailyGoal}
+        onAddStreakDay={addTemporaryStreakDay}
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
         onParticlesEnabledChange={setParticlesEnabled}

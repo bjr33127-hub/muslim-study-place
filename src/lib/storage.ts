@@ -1,7 +1,7 @@
 import type { MemoryStatus } from '../types/app'
 import { DURABLE_STATE_STORE, openAppDb } from './appDb'
 
-const STORAGE_PREFIX = 'muslim-study-place:'
+export const STORAGE_PREFIX = 'muslim-study-place:'
 
 type DurableRecord = {
   key: string
@@ -33,14 +33,14 @@ export const DURABLE_STORAGE_KEYS = [
 
 export type DurableStorageKey = (typeof DURABLE_STORAGE_KEYS)[number]
 
-type DurableSnapshot = {
+export type DurableSnapshot = {
   app: 'muslim-study-place'
   version: 1
   exportedAt: string
   values: Partial<Record<DurableStorageKey, unknown>>
 }
 
-function fullKey(key: string) {
+export function fullStorageKey(key: string) {
   return STORAGE_PREFIX + key
 }
 
@@ -61,18 +61,24 @@ function parseRaw<T>(raw: string | null): T | undefined {
 }
 
 export function hasUsableStorageValue(key: string) {
-  return parseRaw(window.localStorage.getItem(fullKey(key))) !== undefined
+  return parseRaw(window.localStorage.getItem(fullStorageKey(key))) !== undefined
 }
 
 export function readStorage<T>(key: string, fallback: T): T {
-  return parseRaw<T>(window.localStorage.getItem(fullKey(key))) ?? fallback
+  return parseRaw<T>(window.localStorage.getItem(fullStorageKey(key))) ?? fallback
 }
 
 export function writeStorage<T>(key: string, value: T) {
   try {
-    window.localStorage.setItem(fullKey(key), JSON.stringify(value))
+    window.localStorage.setItem(fullStorageKey(key), JSON.stringify(value))
   } catch {
     // Browsers can reject storage in private modes; the app should still run.
+  }
+
+  if (isDurableStorageKey(key)) {
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', { detail: { key } }),
+    )
   }
 
   void writeDurableStorage(key, value)
@@ -167,7 +173,7 @@ export async function buildDurableSnapshot(): Promise<DurableSnapshot> {
   const values: Partial<Record<DurableStorageKey, unknown>> = {}
 
   DURABLE_STORAGE_KEYS.forEach((key) => {
-    const localValue = parseRaw(window.localStorage.getItem(fullKey(key)))
+    const localValue = parseRaw(window.localStorage.getItem(fullStorageKey(key)))
 
     if (localValue !== undefined) {
       values[key] = localValue
@@ -206,7 +212,7 @@ export async function importDurableSnapshot(payload: unknown) {
   await Promise.all(
     entries.map(([key, value]) => {
       try {
-        window.localStorage.setItem(fullKey(key), JSON.stringify(value))
+        window.localStorage.setItem(fullStorageKey(key), JSON.stringify(value))
       } catch {
         // Keep importing into IndexedDB even if localStorage refuses the write.
       }

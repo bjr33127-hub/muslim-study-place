@@ -64,12 +64,31 @@ export type TimerSettings = {
   longBreakEvery: number
 }
 
+export type StreakDaySource = 'check-in' | 'activity' | 'manual'
+
+export type StreakDayRecord = {
+  date: string
+  count: number
+  goal: number
+  checkedIn: boolean
+  completed: boolean
+  source: StreakDaySource
+}
+
 export type StreakState = {
   current: number
   best: number
   lastActiveDate: string | null
   todayCount: number
   dailyGoal: number
+  history: Record<string, StreakDayRecord>
+}
+
+export type StreakUnlockCue = {
+  key: number
+  date: string
+  taskLabel?: string
+  subtitle?: string
 }
 
 export type PomodoroRunState = {
@@ -80,6 +99,13 @@ export type PomodoroRunState = {
   totalStars: number
   lastStarAt: number
   autoCycle: boolean
+  starHistory: Record<string, PomodoroStarDayRecord>
+}
+
+export type PomodoroStarDayRecord = {
+  date: string
+  stars: number
+  bestRun: number
 }
 
 export type TaskPomodoroMemory = {
@@ -96,4 +122,47 @@ export type MemoryStatus = {
   updatedAt: number | null
   restored: boolean
   error?: string
+}
+
+export type AuthUserProfile = {
+  id: string
+  email: string
+  displayName: string
+  avatarUrl: string
+}
+
+export type CloudSnapshot = {
+  app: 'muslim-study-place'
+  version: 1
+  exportedAt: string
+  values: Record<string, unknown>
+}
+
+export type CloudSyncPhase =
+  | 'unconfigured'
+  | 'signed-out'
+  | 'checking'
+  | 'conflict'
+  | 'syncing'
+  | 'synced'
+  | 'offline'
+  | 'error'
+
+export type CloudSyncStatus = {
+  phase: CloudSyncPhase
+  configured: boolean
+  revision: number | null
+  lastSyncedAt: number | null
+  message?: string
+}
+
+export type CloudRemoteState = {
+  snapshot: CloudSnapshot
+  revision: number
+  updatedAt: string | null
+}
+
+export type CloudConflictState = {
+  local: CloudSnapshot
+  remote: CloudRemoteState
 }

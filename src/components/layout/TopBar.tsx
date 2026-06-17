@@ -1,27 +1,56 @@
-import { LockKeyhole, Settings, Sparkles, Star } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import type { AppCopy } from '../../lib/i18n'
-import type { StreakState } from '../../types/app'
+import type {
+  AuthUserProfile,
+  CloudConflictState,
+  CloudSyncStatus,
+  PomodoroRunState,
+  StreakState,
+  StreakUnlockCue,
+} from '../../types/app'
+import { AccountMenu } from './AccountMenu'
+import { BestRunBadge, TotalStarsBadge } from './PomodoroMetricBadges'
 import { QuranMiniPlayer } from './QuranMiniPlayer'
 import { StreakFlame } from './StreakFlame'
 
 type TopBarProps = {
   copy: AppCopy
-  currentBackground: string
   streak: StreakState
-  bestPomodoroRun: number
-  totalStars: number
+  streakIgniteKey: number
+  streakUnlockCue: StreakUnlockCue | null
+  run: PomodoroRunState
   starBurstKey: number
+  bestRunBurstKey: number
+  cloudUser: AuthUserProfile | null
+  cloudStatus: CloudSyncStatus
+  cloudConflict: CloudConflictState | null
   onOpenSettings: () => void
+  onCloudSignIn: () => void
+  onCloudSignOut: () => void
+  onCloudSyncNow: () => void
+  onUseCloudVersion: () => void
+  onUseLocalVersion: () => void
+  onExportLocalBackup: () => void
 }
 
 export function TopBar({
   copy,
-  currentBackground,
   streak,
-  bestPomodoroRun,
-  totalStars,
+  streakIgniteKey,
+  streakUnlockCue,
+  run,
   starBurstKey,
+  bestRunBurstKey,
+  cloudUser,
+  cloudStatus,
+  cloudConflict,
   onOpenSettings,
+  onCloudSignIn,
+  onCloudSignOut,
+  onCloudSyncNow,
+  onUseCloudVersion,
+  onUseLocalVersion,
+  onExportLocalBackup,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -36,43 +65,36 @@ export function TopBar({
       <div className="topbar-media">
         <QuranMiniPlayer copy={copy.quran} />
         <div className="topbar-actions">
-          <StreakFlame streak={streak} label={copy.streak.label} />
-          <div
-            className={`best-run-star${bestPomodoroRun > 0 ? ' is-lit' : ''}`}
-            aria-label={copy.topbar.bestRunAria}
-          >
-            <span className="best-star-orb" aria-hidden="true">
-              <Star size={19} strokeWidth={1.9} />
-            </span>
-            <div className="best-run-copy">
-              <strong>{bestPomodoroRun}</strong>
-              <span>{copy.topbar.bestRun}</span>
-            </div>
-          </div>
-          <div
-            className={`total-stars-counter${totalStars > 0 ? ' is-lit' : ''}`}
-            aria-label={copy.topbar.totalStarsAria}
-          >
-            <span className="total-star-orb" aria-hidden="true">
-              <Sparkles size={18} strokeWidth={1.9} />
-            </span>
-            <div className="total-stars-copy">
-              <strong>{totalStars}</strong>
-              <span>{copy.topbar.totalStars}</span>
-            </div>
-          </div>
-          <span className="background-chip">{currentBackground}</span>
-          <span className="privacy-chip">
-            <LockKeyhole size={14} strokeWidth={1.8} />
-            {copy.app.local}
-          </span>
+          <AccountMenu
+            copy={copy.account}
+            user={cloudUser}
+            status={cloudStatus}
+            conflict={cloudConflict}
+            onSignIn={onCloudSignIn}
+            onSignOut={onCloudSignOut}
+            onSyncNow={onCloudSyncNow}
+            onUseCloudVersion={onUseCloudVersion}
+            onUseLocalVersion={onUseLocalVersion}
+            onExportLocalBackup={onExportLocalBackup}
+          />
+          <StreakFlame
+            streak={streak}
+            copy={copy.streak}
+            igniteKey={streakIgniteKey}
+            unlockCue={streakUnlockCue}
+          />
+          <BestRunBadge
+            run={run}
+            copy={copy.topbar}
+            burstKey={bestRunBurstKey}
+          />
+          <TotalStarsBadge
+            run={run}
+            copy={copy.topbar}
+            showerKey={starBurstKey}
+          />
         </div>
       </div>
-      {starBurstKey ? (
-        <span key={starBurstKey} className="star-flight" aria-hidden="true">
-          <Star size={18} strokeWidth={1.8} />
-        </span>
-      ) : null}
     </header>
   )
 }

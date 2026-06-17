@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 import type { ComponentType } from 'react'
 import type { AppCopy } from '../../lib/i18n'
+import { recordPomodoroStar } from '../../lib/pomodoroRun'
 import { timerSeconds } from '../../lib/timer'
 import { clampPomodoros } from '../../lib/todos'
 import type { PomodoroRunState, TimerMode, TimerSettings } from '../../types/app'
@@ -116,7 +117,7 @@ export function PomodoroWidget({
   const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
   const objectiveFinished = run.completedInTarget >= target
-  const canSkipBreak = mode !== 'focus' && !objectiveFinished
+  const canSkipSegment = !objectiveFinished
   const duration = Math.max(timerSeconds(mode, timerSettings), 1)
   const elapsed = Math.min(Math.max(duration - remaining, 0), duration)
   const progress = objectiveFinished ? 100 : Math.round((elapsed / duration) * 100)
@@ -185,6 +186,46 @@ export function PomodoroWidget({
     onRunningChange(keepRunning)
   }, [onModeChange, onRemainingChange, onRunningChange, timerSettings])
 
+  const completeFocus = useCallback(() => {
+    onFocusComplete()
+    const nextRunCount = run.currentRun + 1
+    const nextCompleted = Math.min(run.completedInTarget + 1, target)
+    const objectiveComplete = nextCompleted >= target
+
+    onRunChange(
+      recordPomodoroStar(
+        {
+          ...run,
+          targetPomodoros: target,
+          completedInTarget: nextCompleted,
+        },
+        nextRunCount,
+      ),
+    )
+
+    if (objectiveComplete) {
+      onRunningChange(false)
+      return 0
+    }
+
+    const nextMode: TimerMode =
+      nextRunCount % longBreakEvery === 0 ? 'longBreak' : 'shortBreak'
+
+    onModeChange(nextMode)
+    onRunningChange(run.autoCycle)
+
+    return timerSeconds(nextMode, timerSettings)
+  }, [
+    longBreakEvery,
+    onFocusComplete,
+    onModeChange,
+    onRunChange,
+    onRunningChange,
+    run,
+    target,
+    timerSettings,
+  ])
+
   useEffect(() => {
     window.addEventListener('pointerdown', primeTimerBeep, { passive: true })
     window.addEventListener('keydown', primeTimerBeep)
@@ -236,30 +277,7 @@ export function PomodoroWidget({
         playTimerBeep()
 
         if (mode === 'focus') {
-          onFocusComplete()
-          const nextRunCount = run.currentRun + 1
-          const nextCompleted = Math.min(run.completedInTarget + 1, target)
-          const objectiveComplete = nextCompleted >= target
-          onRunChange({
-            ...run,
-            targetPomodoros: target,
-            currentRun: nextRunCount,
-            bestRun: Math.max(run.bestRun, nextRunCount),
-            totalStars: (run.totalStars ?? 0) + 1,
-            lastStarAt: Date.now(),
-            completedInTarget: nextCompleted,
-          })
-
-          if (objectiveComplete) {
-            onRunningChange(false)
-            return 0
-          }
-
-          switchMode(
-            nextRunCount % longBreakEvery === 0 ? 'longBreak' : 'shortBreak',
-            run.autoCycle,
-          )
-          return 0
+          return completeFocus()
         }
 
         switchMode('focus', run.autoCycle)
@@ -269,17 +287,13 @@ export function PomodoroWidget({
 
     return () => window.clearInterval(interval)
   }, [
+    completeFocus,
     isRunning,
-    longBreakEvery,
     mode,
-    onFocusComplete,
     onRemainingChange,
-    onRunChange,
-    onRunningChange,
     playTimerBeep,
     run,
     switchMode,
-    target,
   ])
 
   const startOrPause = () => {
@@ -300,7 +314,13 @@ export function PomodoroWidget({
     onTargetChange(clampPomodoros(target + delta))
   }
 
-  const skipBreak = () => {
+  const skipSegment = () => {
+    if (mode === 'focus') {
+      playTimerBeep()
+      onRemainingChange(completeFocus())
+      return
+    }
+
     switchMode('focus', run.autoCycle)
   }
 
@@ -436,7 +456,7 @@ export function PomodoroWidget({
         </label>
       </div>
 
-      <div className={`timer-actions${canSkipBreak ? ' has-skip' : ''}`}>
+      <div className={`timer-actions${canSkipSegment ? ' has-skip' : ''}`}>
         <button
           className="primary-action"
           type="button"
@@ -461,8 +481,8 @@ export function PomodoroWidget({
           <RotateCcw size={16} strokeWidth={1.8} />
           {copy.reset}
         </button>
-        {canSkipBreak ? (
-          <button className="ghost-action" type="button" onClick={skipBreak}>
+        {canSkipSegment ? (
+          <button className="ghost-action" type="button" onClick={skipSegment}>
             <SkipForward size={16} strokeWidth={1.8} />
             {copy.skipBreak}
           </button>

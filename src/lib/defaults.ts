@@ -83,6 +83,7 @@ export const DEFAULT_STREAK: StreakState = {
   lastActiveDate: null,
   todayCount: 0,
   dailyGoal: 1,
+  history: {},
 }
 
 export const DEFAULT_POMODORO_RUN: PomodoroRunState = {
@@ -93,6 +94,7 @@ export const DEFAULT_POMODORO_RUN: PomodoroRunState = {
   totalStars: 0,
   lastStarAt: 0,
   autoCycle: true,
+  starHistory: {},
 }
 
 export const DEFAULT_TIMER_SETTINGS: TimerSettings = {

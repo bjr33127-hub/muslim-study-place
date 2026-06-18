@@ -162,6 +162,7 @@ export const COPY = {
       modeAria: 'Mode du minuteur',
       continuousAria: 'Suite continue de pomodoros',
       finished: 'Termine !',
+      earnedStars: (value: number) => `${value} etoiles gagnees`,
       continuous: (current: number, target: number) =>
         `${current}/${target} continue`,
       best: (value: number) => `Record ${value}`,
@@ -464,6 +465,7 @@ export const COPY = {
       modeAria: 'Timer mode',
       continuousAria: 'Continuous pomodoro streak',
       finished: 'Finished!',
+      earnedStars: (value: number) => `${value} stars earned`,
       continuous: (current: number, target: number) =>
         `${current}/${target} continuous`,
       best: (value: number) => `Best ${value}`,

@@ -117,6 +117,9 @@ export function PomodoroWidget({
   const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
   const objectiveFinished = run.completedInTarget >= target
+  const earnedStars = Math.max(run.currentRun, run.completedInTarget)
+  const finishedStarCount = Math.max(1, earnedStars)
+  const canAdjustTarget = !objectiveFinished
   const canSkipSegment = !objectiveFinished
   const duration = Math.max(timerSeconds(mode, timerSettings), 1)
   const elapsed = Math.min(Math.max(duration - remaining, 0), duration)
@@ -311,6 +314,10 @@ export function PomodoroWidget({
   }
 
   const updateTarget = (delta: number) => {
+    if (!canAdjustTarget) {
+      return
+    }
+
     onTargetChange(clampPomodoros(target + delta))
   }
 
@@ -377,10 +384,18 @@ export function PomodoroWidget({
       <div className="pomodoro-chain" aria-label={copy.continuousAria}>
         {objectiveFinished ? (
           <div className="finished-banner" aria-live="polite">
-            <span aria-hidden="true">
-              <Star size={12} strokeWidth={1.8} />
-              <Sparkle size={13} strokeWidth={1.8} />
-              <Star size={10} strokeWidth={1.8} />
+            <span
+              className="finished-stars"
+              aria-label={copy.earnedStars(finishedStarCount)}
+            >
+              {Array.from({ length: finishedStarCount }, (_, index) => (
+                <Star
+                  key={index}
+                  size={finishedStarCount > 12 ? 9 : finishedStarCount > 8 ? 10 : 12}
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              ))}
             </span>
             <strong>{copy.finished}</strong>
           </div>
@@ -408,14 +423,19 @@ export function PomodoroWidget({
         </div>
       </div>
 
-      <div className="pomodoro-objective-panel">
+      <div className={`pomodoro-objective-panel${objectiveFinished ? ' is-locked' : ''}`}>
         <span>
           {activeTaskLabel ? copy.currentTask(activeTaskLabel) : copy.freeFocus}
         </span>
-        <div className="goal-stepper small" aria-label={copy.targetAria}>
+        <div
+          className={`goal-stepper small${objectiveFinished ? ' is-locked' : ''}`}
+          aria-label={copy.targetAria}
+          aria-disabled={objectiveFinished}
+        >
           <button
             type="button"
             aria-label={copy.decreaseTarget}
+            disabled={!canAdjustTarget}
             onClick={() => updateTarget(-1)}
           >
             <Minus size={13} strokeWidth={1.9} />
@@ -424,6 +444,7 @@ export function PomodoroWidget({
           <button
             type="button"
             aria-label={copy.increaseTarget}
+            disabled={!canAdjustTarget}
             onClick={() => updateTarget(1)}
           >
             <Plus size={13} strokeWidth={1.9} />

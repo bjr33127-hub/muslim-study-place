@@ -42,6 +42,7 @@ import {
   type TodoFilter,
   type TodoSortMode,
   clampPomodoros,
+  compareTodos,
   filterAndSortTodos,
   groupCompletedTodos,
   todoCounts,
@@ -73,6 +74,16 @@ type EditDraft = {
   difficulty: TodoDifficulty
   requiredPomodoros: number
 }
+
+type TodoRenderEntry =
+  | {
+      kind: 'open'
+      todo: TodoItem
+    }
+  | {
+      kind: 'completed'
+      group: CompletedTodoGroup
+    }
 
 type TodoWidgetProps = {
   copy: AppCopy['todo']
@@ -134,6 +145,23 @@ const difficultyIcons: Record<TodoDifficulty, TodoIcon> = {
   normal: Gauge,
   hard: Mountain,
   intense: Dumbbell,
+}
+
+function comparableCompletedGroup(group: CompletedTodoGroup): TodoItem {
+  return {
+    ...group.template,
+    completed: true,
+    completedPomodoros: group.totalCompletedPomodoros,
+    requiredPomodoros: group.totalRequiredPomodoros,
+    completedAt: group.latestCompletedAt,
+    updatedAt: group.latestCompletedAt ?? group.template.updatedAt,
+  }
+}
+
+function comparableEntry(entry: TodoRenderEntry): TodoItem {
+  return entry.kind === 'open'
+    ? entry.todo
+    : comparableCompletedGroup(entry.group)
 }
 
 function AttributePill({
@@ -222,8 +250,26 @@ export function TodoWidget({
       ),
     [todos],
   )
-  const visibleActiveTodos = filter === 'completed' ? [] : activeTodos
-  const visibleCompletedGroups = filter === 'active' ? [] : completedGroups
+  const allTodoEntries = useMemo(() => {
+    const entries: TodoRenderEntry[] = [
+      ...activeTodos.map((todo) => ({ kind: 'open' as const, todo })),
+      ...completedGroups.map((group) => ({
+        kind: 'completed' as const,
+        group,
+      })),
+    ]
+
+    if (sortMode === 'manual') {
+      return entries
+    }
+
+    return [...entries].sort((first, second) =>
+      compareTodos(comparableEntry(first), comparableEntry(second), sortMode),
+    )
+  }, [activeTodos, completedGroups, sortMode])
+  const visibleActiveTodos = filter === 'active' ? activeTodos : []
+  const visibleCompletedGroups = filter === 'completed' ? completedGroups : []
+  const visibleAllEntries = filter === 'all' ? allTodoEntries : []
   const counts = useMemo(() => todoCounts(todos), [todos])
   const canDrag = sortMode === 'manual'
 
@@ -830,9 +876,16 @@ export function TodoWidget({
       </div>
 
       <div className="todo-list">
+        {visibleAllEntries.map((entry) =>
+          entry.kind === 'open'
+            ? renderOpenTask(entry.todo)
+            : renderCompletedGroup(entry.group),
+        )}
         {visibleActiveTodos.map(renderOpenTask)}
         {visibleCompletedGroups.map(renderCompletedGroup)}
-        {!visibleActiveTodos.length && !visibleCompletedGroups.length ? (
+        {!visibleAllEntries.length &&
+        !visibleActiveTodos.length &&
+        !visibleCompletedGroups.length ? (
           <div className="todo-empty">
             <Check size={18} strokeWidth={1.8} />
             <span>{copy.noTasks}</span>

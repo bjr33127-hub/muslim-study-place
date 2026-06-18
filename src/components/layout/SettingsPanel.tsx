@@ -233,6 +233,7 @@ export function SettingsPanel({
         <button
           className="ghost-action full-width"
           type="button"
+          hidden
           onClick={onAddStreakDay}
         >
           <Flame size={15} strokeWidth={1.8} />

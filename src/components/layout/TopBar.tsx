@@ -54,29 +54,31 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="topbar">
-      <button
-        className="icon-button settings-trigger"
-        type="button"
-        aria-label={copy.topbar.openSettings}
-        onClick={onOpenSettings}
-      >
-        <Settings size={18} strokeWidth={1.8} />
-      </button>
+      <div className="topbar-left">
+        <button
+          className="icon-button settings-trigger"
+          type="button"
+          aria-label={copy.topbar.openSettings}
+          onClick={onOpenSettings}
+        >
+          <Settings size={18} strokeWidth={1.8} />
+        </button>
+        <AccountMenu
+          copy={copy.account}
+          user={cloudUser}
+          status={cloudStatus}
+          conflict={cloudConflict}
+          onSignIn={onCloudSignIn}
+          onSignOut={onCloudSignOut}
+          onSyncNow={onCloudSyncNow}
+          onUseCloudVersion={onUseCloudVersion}
+          onUseLocalVersion={onUseLocalVersion}
+          onExportLocalBackup={onExportLocalBackup}
+        />
+      </div>
       <div className="topbar-media">
         <QuranMiniPlayer copy={copy.quran} />
         <div className="topbar-actions">
-          <AccountMenu
-            copy={copy.account}
-            user={cloudUser}
-            status={cloudStatus}
-            conflict={cloudConflict}
-            onSignIn={onCloudSignIn}
-            onSignOut={onCloudSignOut}
-            onSyncNow={onCloudSyncNow}
-            onUseCloudVersion={onUseCloudVersion}
-            onUseLocalVersion={onUseLocalVersion}
-            onExportLocalBackup={onExportLocalBackup}
-          />
           <StreakFlame
             streak={streak}
             copy={copy.streak}

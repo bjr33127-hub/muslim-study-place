@@ -1346,31 +1346,11 @@ async function main() {
   await page.locator('.settings-trigger').click()
   assert(await page.getByRole('heading', { name: 'Parametres' }).isVisible(), 'French settings title missing')
   assert(await page.getByText('Memoire locale').isVisible(), 'Memory settings section missing')
-  await page.getByRole('button', { name: 'Simuler +1 jour' }).click()
-  await page.locator('.streak-flame.is-igniting').waitFor({ state: 'visible' })
-  await page.locator('.streak-unlock-card').waitFor({ state: 'visible' })
   assert(
-    await page.locator('.streak-unlock-card').getByText('Simulation +1 jour').isVisible(),
-    'Simulating a streak day should show the unlock animation card',
-  )
-  await page.locator('.streak-unlock-day.is-unlocking-target.is-unlocked').waitFor({ state: 'visible' })
-  await page.waitForFunction(() => {
-    const streak = JSON.parse(localStorage.getItem('muslim-study-place:streak') || '{}')
-
-    return (
-      streak.current === 2 &&
-      streak.best === 6 &&
-      streak.todayCount === 1 &&
-      Object.values(streak.history || {}).some((day) => day.source === 'manual')
-    )
-  })
-  assert(
-    await page.evaluate(() => localStorage.getItem('muslim-study-place:streak:lastTaskUnlockDate') === null),
-    'Simulating a streak day should not consume the real task unlock lock',
+    await page.getByRole('button', { name: 'Simuler +1 jour' }).count() === 0,
+    'Temporary streak simulation button should stay hidden',
   )
   assert(await page.getByLabel('Notes').count() === 0, 'Notes should not appear in settings or dock')
-  await page.locator('.settings-trigger').click()
-  assert(await page.getByRole('heading', { name: 'Parametres' }).isVisible(), 'French settings should reopen after simulation')
   await page.getByLabel('Langue de l interface').selectOption('en')
   await page.waitForFunction(() => document.documentElement.lang === 'en')
   assert(await page.getByRole('heading', { name: 'Settings' }).isVisible(), 'English settings title missing after language switch')
@@ -1780,6 +1760,42 @@ async function main() {
   )
   assert(freeFocusState.streak.includes('"todayCount"'), 'Free pomodoro did not record focus activity')
 
+  await page.evaluate(() => {
+    localStorage.setItem('muslim-study-place:todos', '[]')
+    localStorage.setItem('muslim-study-place:taskPomodoroMemory', '{}')
+    localStorage.setItem('muslim-study-place:timer:remaining', '0')
+    localStorage.setItem('muslim-study-place:timer:mode', '"focus"')
+    localStorage.setItem('muslim-study-place:timer:running', 'false')
+    localStorage.setItem(
+      'muslim-study-place:pomodoroRun',
+      JSON.stringify({
+        targetPomodoros: 6,
+        completedInTarget: 6,
+        currentRun: 7,
+        bestRun: 7,
+        totalStars: 7,
+        lastStarAt: Date.now(),
+        autoCycle: false,
+        starHistory: {},
+      }),
+    )
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  assert(await page.locator('.finished-banner').getByText('Finished!').isVisible(), 'Finished banner missing for completed run')
+  assert(
+    (await page.locator('.finished-banner .finished-stars svg').count()) === 7,
+    'Finished banner should display the earned star count',
+  )
+  assert(
+    await page.evaluate(() =>
+      [...document.querySelectorAll('.pomodoro-objective-panel .goal-stepper button')].every(
+        (button) => button.disabled,
+      ),
+    ),
+    'Finished pomodoro target stepper should be locked',
+  )
+
   await page.evaluate(
     ({ today }) => {
       localStorage.setItem(
@@ -1988,6 +2004,82 @@ async function main() {
     () => localStorage.getItem('muslim-study-place:timer:mode') === '"focus"',
   )
   assert(await page.getByText('25:00').isVisible(), 'Skipping a break did not return to focus')
+
+  await page.evaluate(() => {
+    const now = Date.now()
+    const todo = (
+      id,
+      text,
+      rank,
+      completedPomodoros,
+      requiredPomodoros,
+      completed = false,
+    ) => ({
+      id,
+      text,
+      priority: 'medium',
+      difficulty: 'normal',
+      rank,
+      completed,
+      active: false,
+      requiredPomodoros,
+      completedPomodoros,
+      createdAt: now - rank * 1000,
+      updatedAt: now - rank * 500,
+      completedAt: completed ? now - rank * 300 : null,
+      repeatIndex: 0,
+    })
+
+    localStorage.setItem(
+      'muslim-study-place:todos',
+      JSON.stringify([
+        todo('qa-zero-large', 'QA zero large target', 1, 0, 5),
+        todo('qa-started-low', 'QA started low progress', 2, 1, 4),
+        todo('qa-started-high', 'QA started high progress', 3, 3, 4),
+        todo('qa-completed-big', 'QA completed big target', 4, 5, 5, true),
+        todo('qa-completed-small', 'QA completed small target', 5, 1, 1, true),
+      ]),
+    )
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(900)
+  await page.locator('.todo-tabs').getByRole('button', { name: 'All', exact: true }).click()
+  const visibleTodoTitles = async () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.todo-list > .todo-row')].map(
+        (row) => row.querySelector('.todo-title-line > span')?.textContent?.trim() || '',
+      ),
+    )
+
+  await page.getByLabel('Sort tasks').selectOption('progress-desc')
+  let sortedTodoTitles = await visibleTodoTitles()
+  assert(
+    sortedTodoTitles[0] === 'QA completed big target' &&
+      sortedTodoTitles[1] === 'QA completed small target',
+    'All-tab highest-progress sort should include completed groups globally',
+  )
+
+  await page.getByLabel('Sort tasks').selectOption('progress-asc')
+  sortedTodoTitles = await visibleTodoTitles()
+  assert(
+    sortedTodoTitles[0] === 'QA zero large target',
+    'All-tab lowest-progress sort should include open tasks globally',
+  )
+
+  await page.getByLabel('Sort tasks').selectOption('target-asc')
+  sortedTodoTitles = await visibleTodoTitles()
+  assert(
+    sortedTodoTitles[0] === 'QA completed small target',
+    'All-tab smallest-target sort should include completed groups globally',
+  )
+
+  await page.getByLabel('Sort tasks').selectOption('target-desc')
+  sortedTodoTitles = await visibleTodoTitles()
+  assert(
+    sortedTodoTitles[0] === 'QA zero large target' &&
+      sortedTodoTitles[1] === 'QA completed big target',
+    'All-tab largest-target sort should interleave open tasks and completed groups',
+  )
 
   await assertFlameStage(page, today, 1, 'ember')
   await assertFlameStage(page, today, 7, 'verdant')

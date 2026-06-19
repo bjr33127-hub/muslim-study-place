@@ -69,19 +69,32 @@ export function readStorage<T>(key: string, fallback: T): T {
 }
 
 export function writeStorage<T>(key: string, value: T) {
+  let changed = true
+
   try {
-    window.localStorage.setItem(fullStorageKey(key), JSON.stringify(value))
+    const storageKey = fullStorageKey(key)
+    const serializedValue = JSON.stringify(value)
+
+    changed = window.localStorage.getItem(storageKey) !== serializedValue
+
+    if (changed) {
+      window.localStorage.setItem(storageKey, serializedValue)
+    }
   } catch {
     // Browsers can reject storage in private modes; the app should still run.
   }
 
-  if (isDurableStorageKey(key)) {
+  const durable = isDurableStorageKey(key)
+
+  if (changed && durable) {
     window.dispatchEvent(
       new CustomEvent('msp:durable-storage-change', { detail: { key } }),
     )
   }
 
-  void writeDurableStorage(key, value)
+  if (durable) {
+    void writeDurableStorage(key, value)
+  }
 }
 
 export async function writeDurableStorage<T>(key: string, value: T) {

@@ -710,6 +710,10 @@ async function assertFlameStage(page, today, current, expectedStage) {
 function installSupabaseMock(initialAppState = null) {
   window.__mspSupabaseState = {
     appState: initialAppState,
+    readDelayMs: 0,
+    readInFlight: false,
+    saveDelayMs: 0,
+    saveInFlight: false,
     profiles: [],
     rpcCalls: [],
     session: null,
@@ -779,6 +783,10 @@ function installSupabaseMock(initialAppState = null) {
   const emit = (event) => {
     state.subscribers.forEach((callback) => callback(event, state.session))
   }
+  const delay = (milliseconds) =>
+    milliseconds > 0
+      ? new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+      : Promise.resolve()
   state.emitAuth = (event) => emit(event)
   state.advanceRevisionWithoutChanges = () => {
     if (!state.appState) {
@@ -831,7 +839,14 @@ function installSupabaseMock(initialAppState = null) {
       select: () => ({
         maybeSingle: async () => {
           if (table === 'user_app_state') {
-            return ok(state.appState)
+            state.readInFlight = true
+
+            try {
+              await delay(state.readDelayMs)
+              return ok(state.appState)
+            } finally {
+              state.readInFlight = false
+            }
           }
 
           return ok(null)
@@ -842,28 +857,36 @@ function installSupabaseMock(initialAppState = null) {
       state.rpcCalls.push({ name, args })
 
       if (name === 'save_app_state') {
-        const expected = args.p_expected_revision
+        const save = async () => {
+          state.saveInFlight = true
 
-        if (
-          state.appState &&
-          expected !== null &&
-          expected !== undefined &&
-          state.appState.revision !== expected
-        ) {
-          const error = new Error('revision_conflict')
-          const result = { data: null, error }
+          try {
+            await delay(state.saveDelayMs)
+            const expected = args.p_expected_revision
 
-          return { ...result, single: async () => result }
+            if (
+              state.appState &&
+              expected !== null &&
+              expected !== undefined &&
+              state.appState.revision !== expected
+            ) {
+              return { data: null, error: new Error('revision_conflict') }
+            }
+
+            const revision = (state.appState?.revision || 0) + 1
+            state.appState = {
+              snapshot: args.p_snapshot,
+              revision,
+              updated_at: new Date().toISOString(),
+            }
+
+            return ok(state.appState)
+          } finally {
+            state.saveInFlight = false
+          }
         }
 
-        const revision = (state.appState?.revision || 0) + 1
-        state.appState = {
-          snapshot: args.p_snapshot,
-          revision,
-          updated_at: new Date().toISOString(),
-        }
-
-        return { ...ok(state.appState), single: async () => ok(state.appState) }
+        return { ...ok(null), single: save }
       }
 
       if (name === 'record_daily_check_in') {
@@ -936,6 +959,9 @@ async function runCloudSyncQa(browser) {
     'Empty cloud login should upload local progress, persist its sync base, and run server streak check-in',
   )
 
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.saveDelayMs = 500
+  })
   const cloudTodoForm = emptyCloudPage.locator('.todo-form')
   await cloudTodoForm.locator('input').fill('Cloud autosync task')
   await cloudTodoForm.locator('.todo-priority-select select').selectOption('medium')
@@ -949,6 +975,14 @@ async function runCloudSyncQa(browser) {
   await emptyCloudPage.evaluate(() => {
     window.__mspSupabaseState.emitAuth('SIGNED_IN')
   })
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState?.saveInFlight === true,
+  )
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-synced').count() === 1 &&
+      await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0,
+    'Automatic cloud saves should keep the account indicator stable and green',
+  )
   await emptyCloudPage.waitForFunction(() => {
     const state = window.__mspSupabaseState
     const todos = state.appState?.snapshot?.values?.todos || []
@@ -957,6 +991,9 @@ async function runCloudSyncQa(browser) {
       state.appState?.revision >= 2 &&
       todos.some((todo) => todo.text === 'Cloud autosync task')
     )
+  })
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.saveDelayMs = 0
   })
   assert(
     await emptyCloudPage.locator('.account-shell.is-conflict').count() === 0,
@@ -997,6 +1034,123 @@ async function runCloudSyncQa(browser) {
       stableCloudRevision,
     ),
     'Refocusing the app without local changes should not create a cloud revision',
+  )
+
+  await emptyCloudPage.evaluate(() => {
+    const storageKey = 'muslim-study-place:settings:backgroundDim'
+    const current = JSON.parse(localStorage.getItem(storageKey) || '72')
+    const next = current === 71 ? 72 : 71
+
+    localStorage.setItem(storageKey, JSON.stringify(next))
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', {
+        detail: { key: 'settings:backgroundDim' },
+      }),
+    )
+    window.__mspSupabaseState.saveDelayMs = 500
+  })
+  if (
+    await emptyCloudPage.locator('.account-button').getAttribute('aria-expanded') !==
+    'true'
+  ) {
+    await emptyCloudPage.locator('.account-button').click()
+  }
+  await emptyCloudPage.getByRole('button', { name: 'Synchroniser' }).click()
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState?.saveInFlight === true,
+  )
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 1,
+    'Manual synchronization should display the syncing indicator immediately',
+  )
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState?.saveInFlight === false,
+  )
+  await emptyCloudPage.locator('.account-shell.is-synced').waitFor()
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.saveDelayMs = 0
+    window.__mspSupabaseState.readDelayMs = 1200
+    window.dispatchEvent(new Event('online'))
+  })
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState?.readInFlight === true,
+  )
+  await emptyCloudPage.waitForTimeout(850)
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 1,
+    'A slow network recovery should reveal the syncing indicator after its grace period',
+  )
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState?.readInFlight === false,
+  )
+  await emptyCloudPage.locator('.account-shell.is-synced').waitFor()
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.readDelayMs = 0
+  })
+
+  await emptyCloudPage.clock.install()
+  const checkpointStartRevision = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appState?.revision,
+  )
+  await emptyCloudPage.evaluate(() => {
+    localStorage.setItem(
+      'muslim-study-place:timer:remaining',
+      JSON.stringify(1499),
+    )
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', {
+        detail: { key: 'timer:remaining' },
+      }),
+    )
+  })
+  await emptyCloudPage.clock.runFor(29_000)
+  assert(
+    await emptyCloudPage.evaluate(
+      (revision) => window.__mspSupabaseState.appState?.revision === revision,
+      checkpointStartRevision,
+    ),
+    'High-frequency timer changes should not save before the 30-second checkpoint',
+  )
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0,
+    'Timer checkpoints should stay visually silent',
+  )
+  await emptyCloudPage.clock.runFor(1_100)
+  assert(
+    await emptyCloudPage.evaluate(
+      (revision) => window.__mspSupabaseState.appState?.revision === revision + 1,
+      checkpointStartRevision,
+    ),
+    'High-frequency timer changes should create one cloud checkpoint after 30 seconds',
+  )
+
+  const immediateStartRevision = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appState?.revision,
+  )
+  await emptyCloudPage.evaluate(() => {
+    localStorage.setItem(
+      'muslim-study-place:timer:remaining',
+      JSON.stringify(1498),
+    )
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', {
+        detail: { key: 'timer:remaining' },
+      }),
+    )
+    localStorage.setItem('muslim-study-place:timer:running', 'true')
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', {
+        detail: { key: 'timer:running' },
+      }),
+    )
+  })
+  await emptyCloudPage.clock.runFor(1_000)
+  assert(
+    await emptyCloudPage.evaluate(
+      (revision) => window.__mspSupabaseState.appState?.revision === revision + 1,
+      immediateStartRevision,
+    ),
+    'Starting or pausing the timer should immediately flush its latest second',
   )
   await emptyCloudContext.close()
 

@@ -19,6 +19,7 @@ import {
   buildDurableSnapshot,
   importDurableSnapshot,
 } from '../lib/storage'
+import type { DurableStorageKey } from '../lib/storage'
 import type {
   AuthUserProfile,
   CloudConflictState,
@@ -27,6 +28,32 @@ import type {
 } from '../types/app'
 
 const SYNC_DEBOUNCE_MS = 900
+const TIMER_CHECKPOINT_MS = 30_000
+const RECOVERY_SPINNER_DELAY_MS = 750
+const HIGH_FREQUENCY_SYNC_KEYS = new Set<DurableStorageKey>([
+  'timer:remaining',
+  'taskPomodoroMemory',
+])
+
+type CloudSyncMode = 'automatic' | 'checkpoint' | 'manual' | 'recovery'
+
+const SYNC_MODE_PRIORITY: Record<CloudSyncMode, number> = {
+  checkpoint: 0,
+  automatic: 1,
+  recovery: 2,
+  manual: 3,
+}
+
+function higherPriorityMode(
+  current: CloudSyncMode | null,
+  next: CloudSyncMode,
+) {
+  if (!current || SYNC_MODE_PRIORITY[next] > SYNC_MODE_PRIORITY[current]) {
+    return next
+  }
+
+  return current
+}
 
 const SIGNED_OUT_STATUS: CloudSyncStatus = {
   configured: true,
@@ -68,27 +95,60 @@ export function useCloudSync() {
   const [conflict, setConflict] = useState<CloudConflictState | null>(null)
   const userIdRef = useRef<string | null>(null)
   const revisionRef = useRef<number | null>(null)
-  const timerRef = useRef<number>(0)
+  const automaticTimerRef = useRef<number>(0)
+  const checkpointTimerRef = useRef<number>(0)
+  const recoverySpinnerTimerRef = useRef<number>(0)
   const syncInFlightRef = useRef(false)
-  const syncQueuedRef = useRef(false)
+  const syncQueuedModeRef = useRef<CloudSyncMode | null>(null)
+  const activeSyncModeRef = useRef<CloudSyncMode | null>(null)
   const bootstrapInFlightRef = useRef(false)
   const conflictRef = useRef(false)
   const lastSyncedSnapshotRef = useRef<CloudRemoteState['snapshot'] | null>(
     null,
   )
-  const syncNowRef = useRef<() => Promise<void>>(async () => undefined)
+  const performSyncRef = useRef<(mode: CloudSyncMode) => Promise<void>>(
+    async () => undefined,
+  )
 
-  const clearSyncTimer = useCallback(() => {
-    window.clearTimeout(timerRef.current)
-    timerRef.current = 0
+  const clearAutomaticTimer = useCallback(() => {
+    window.clearTimeout(automaticTimerRef.current)
+    automaticTimerRef.current = 0
   }, [])
 
-  const queueSync = useCallback(() => {
-    clearSyncTimer()
-    timerRef.current = window.setTimeout(() => {
-      void syncNowRef.current()
+  const clearCheckpointTimer = useCallback(() => {
+    window.clearTimeout(checkpointTimerRef.current)
+    checkpointTimerRef.current = 0
+  }, [])
+
+  const clearRecoverySpinnerTimer = useCallback(() => {
+    window.clearTimeout(recoverySpinnerTimerRef.current)
+    recoverySpinnerTimerRef.current = 0
+  }, [])
+
+  const clearPendingSyncTimers = useCallback(() => {
+    clearAutomaticTimer()
+    clearCheckpointTimer()
+  }, [clearAutomaticTimer, clearCheckpointTimer])
+
+  const queueAutomaticSync = useCallback(() => {
+    clearAutomaticTimer()
+    clearCheckpointTimer()
+    automaticTimerRef.current = window.setTimeout(() => {
+      automaticTimerRef.current = 0
+      void performSyncRef.current('automatic')
     }, SYNC_DEBOUNCE_MS)
-  }, [clearSyncTimer])
+  }, [clearAutomaticTimer, clearCheckpointTimer])
+
+  const queueTimerCheckpoint = useCallback(() => {
+    if (checkpointTimerRef.current) {
+      return
+    }
+
+    checkpointTimerRef.current = window.setTimeout(() => {
+      checkpointTimerRef.current = 0
+      void performSyncRef.current('checkpoint')
+    }, TIMER_CHECKPOINT_MS)
+  }, [])
 
   const rememberSyncedRemote = useCallback((remote: CloudRemoteState) => {
     const userId = userIdRef.current
@@ -103,7 +163,7 @@ export function useCloudSync() {
     setStatus(syncedStatus(remote))
   }, [])
 
-  const syncNow = useCallback(async () => {
+  const performSync = useCallback(async (mode: CloudSyncMode) => {
     if (!client || !userIdRef.current || conflictRef.current) {
       return
     }
@@ -118,17 +178,47 @@ export function useCloudSync() {
     }
 
     if (syncInFlightRef.current || bootstrapInFlightRef.current) {
-      syncQueuedRef.current = true
+      syncQueuedModeRef.current = higherPriorityMode(
+        syncQueuedModeRef.current,
+        mode,
+      )
+
+      if (mode === 'manual') {
+        setStatus((current) => ({
+          ...current,
+          configured: true,
+          phase: 'syncing',
+        }))
+      }
       return
     }
 
-    syncQueuedRef.current = false
+    clearPendingSyncTimers()
+    clearRecoverySpinnerTimer()
+    syncQueuedModeRef.current = null
     syncInFlightRef.current = true
-    setStatus((current) => ({
-      ...current,
-      configured: true,
-      phase: 'syncing',
-    }))
+    activeSyncModeRef.current = mode
+
+    if (mode === 'manual') {
+      setStatus((current) => ({
+        ...current,
+        configured: true,
+        phase: 'syncing',
+      }))
+    } else if (mode === 'recovery') {
+      recoverySpinnerTimerRef.current = window.setTimeout(() => {
+        if (
+          syncInFlightRef.current &&
+          activeSyncModeRef.current === 'recovery'
+        ) {
+          setStatus((current) => ({
+            ...current,
+            configured: true,
+            phase: 'syncing',
+          }))
+        }
+      }, RECOVERY_SPINNER_DELAY_MS)
+    }
 
     try {
       const snapshot = durableToCloudSnapshot(await buildDurableSnapshot())
@@ -250,37 +340,45 @@ export function useCloudSync() {
         phase: navigator.onLine ? 'error' : 'offline',
       }))
     } finally {
+      clearRecoverySpinnerTimer()
       syncInFlightRef.current = false
+      activeSyncModeRef.current = null
 
-      if (
-        syncQueuedRef.current &&
-        !conflictRef.current &&
-        userIdRef.current
-      ) {
-        syncQueuedRef.current = false
-        queueSync()
+      const queuedMode = syncQueuedModeRef.current
+      syncQueuedModeRef.current = null
+
+      if (queuedMode && !conflictRef.current && userIdRef.current) {
+        void performSyncRef.current(queuedMode)
       }
     }
-  }, [client, queueSync, rememberSyncedRemote])
+  }, [
+    clearPendingSyncTimers,
+    clearRecoverySpinnerTimer,
+    client,
+    rememberSyncedRemote,
+  ])
 
-  syncNowRef.current = syncNow
+  performSyncRef.current = performSync
 
-  const scheduleSync = useCallback(() => {
+  const scheduleStorageSync = useCallback((key?: DurableStorageKey) => {
     if (!client || !userIdRef.current || conflictRef.current) {
       return
     }
 
-    if (syncInFlightRef.current || bootstrapInFlightRef.current) {
-      syncQueuedRef.current = true
+    if (key && HIGH_FREQUENCY_SYNC_KEYS.has(key)) {
+      queueTimerCheckpoint()
       return
     }
 
-    queueSync()
-  }, [client, queueSync])
+    queueAutomaticSync()
+  }, [client, queueAutomaticSync, queueTimerCheckpoint])
+
+  const syncNow = useCallback(() => performSync('manual'), [performSync])
 
   const bootstrapSession = useCallback(async (session: Session | null) => {
-    clearSyncTimer()
-    syncQueuedRef.current = false
+    clearPendingSyncTimers()
+    clearRecoverySpinnerTimer()
+    syncQueuedModeRef.current = null
     conflictRef.current = false
     setConflict(null)
 
@@ -347,7 +445,7 @@ export function useCloudSync() {
             throw error
           }
 
-          syncQueuedRef.current = true
+          syncQueuedModeRef.current = 'automatic'
         }
         return
       }
@@ -372,7 +470,7 @@ export function useCloudSync() {
             throw error
           }
 
-          syncQueuedRef.current = true
+          syncQueuedModeRef.current = 'automatic'
         }
         return
       }
@@ -408,16 +506,19 @@ export function useCloudSync() {
     } finally {
       bootstrapInFlightRef.current = false
 
-      if (
-        syncQueuedRef.current &&
-        !conflictRef.current &&
-        userIdRef.current
-      ) {
-        syncQueuedRef.current = false
-        queueSync()
+      const queuedMode = syncQueuedModeRef.current
+      syncQueuedModeRef.current = null
+
+      if (queuedMode && !conflictRef.current && userIdRef.current) {
+        void performSyncRef.current(queuedMode)
       }
     }
-  }, [clearSyncTimer, client, queueSync, rememberSyncedRemote])
+  }, [
+    clearPendingSyncTimers,
+    clearRecoverySpinnerTimer,
+    client,
+    rememberSyncedRemote,
+  ])
 
   useEffect(() => {
     if (!client) {
@@ -479,20 +580,30 @@ export function useCloudSync() {
   }, [bootstrapSession, client])
 
   useEffect(() => {
-    const handleStorageChange = () => scheduleSync()
-    const handleOnline = () => void syncNowRef.current()
+    const handleStorageChange = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: DurableStorageKey }>).detail?.key
+
+      scheduleStorageSync(key)
+    }
+    const handleOnline = () => void performSyncRef.current('recovery')
+    const handleFocus = () => void performSyncRef.current('automatic')
 
     window.addEventListener('msp:durable-storage-change', handleStorageChange)
     window.addEventListener('online', handleOnline)
-    window.addEventListener('focus', handleOnline)
+    window.addEventListener('focus', handleFocus)
 
     return () => {
       window.removeEventListener('msp:durable-storage-change', handleStorageChange)
       window.removeEventListener('online', handleOnline)
-      window.removeEventListener('focus', handleOnline)
-      clearSyncTimer()
+      window.removeEventListener('focus', handleFocus)
+      clearPendingSyncTimers()
+      clearRecoverySpinnerTimer()
     }
-  }, [clearSyncTimer, scheduleSync])
+  }, [
+    clearPendingSyncTimers,
+    clearRecoverySpinnerTimer,
+    scheduleStorageSync,
+  ])
 
   const signIn = useCallback(async () => {
     if (!client) {
@@ -531,11 +642,14 @@ export function useCloudSync() {
     userIdRef.current = null
     revisionRef.current = null
     lastSyncedSnapshotRef.current = null
-    syncQueuedRef.current = false
+    syncQueuedModeRef.current = null
+    activeSyncModeRef.current = null
     conflictRef.current = false
+    clearPendingSyncTimers()
+    clearRecoverySpinnerTimer()
     setConflict(null)
     setStatus(SIGNED_OUT_STATUS)
-  }, [client])
+  }, [clearPendingSyncTimers, clearRecoverySpinnerTimer, client])
 
   const useCloudVersion = useCallback(async () => {
     if (!conflict || !userIdRef.current) {

@@ -10,6 +10,7 @@ import { fullStorageKey, type DurableSnapshot } from './storage'
 
 export const CLOUD_LAST_USER_KEY = 'cloud:lastUserId'
 export const CLOUD_LAST_REVISION_KEY = 'cloud:lastRevision'
+export const CLOUD_LAST_SNAPSHOT_KEY = 'cloud:lastSnapshot'
 export const CLOUD_PRE_MERGE_BACKUP_KEY = 'cloud:preMergeBackup'
 
 type AppStateRow = {
@@ -60,12 +61,23 @@ export function getStoredCloudMeta() {
   return {
     userId: safeLocalStorageGet<string>(CLOUD_LAST_USER_KEY),
     revision: safeLocalStorageGet<number>(CLOUD_LAST_REVISION_KEY),
+    snapshot: normalizeCloudSnapshot(
+      safeLocalStorageGet<unknown>(CLOUD_LAST_SNAPSHOT_KEY),
+    ),
   }
 }
 
-export function writeStoredCloudMeta(userId: string, revision: number) {
+export function writeStoredCloudMeta(
+  userId: string,
+  revision: number,
+  snapshot?: CloudSnapshot,
+) {
   safeLocalStorageSet(CLOUD_LAST_USER_KEY, userId)
   safeLocalStorageSet(CLOUD_LAST_REVISION_KEY, revision)
+
+  if (snapshot) {
+    safeLocalStorageSet(CLOUD_LAST_SNAPSHOT_KEY, snapshot)
+  }
 }
 
 export function storePreMergeBackup(snapshot: CloudSnapshot) {

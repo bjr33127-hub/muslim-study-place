@@ -779,6 +779,18 @@ function installSupabaseMock(initialAppState = null) {
   const emit = (event) => {
     state.subscribers.forEach((callback) => callback(event, state.session))
   }
+  state.emitAuth = (event) => emit(event)
+  state.advanceRevisionWithoutChanges = () => {
+    if (!state.appState) {
+      return
+    }
+
+    state.appState = {
+      ...state.appState,
+      revision: state.appState.revision + 1,
+      updated_at: new Date().toISOString(),
+    }
+  }
   const ok = (data = null) => ({ data, error: null })
 
   window.__MSP_SUPABASE_MOCK__ = {
@@ -917,10 +929,74 @@ async function runCloudSyncQa(browser) {
         state.profiles.length >= 1 &&
         todos.some((todo) => todo.text === 'Cloud local seed') &&
         state.rpcCalls.some((call) => call.name === 'save_app_state') &&
-        state.rpcCalls.some((call) => call.name === 'record_daily_check_in')
+        state.rpcCalls.some((call) => call.name === 'record_daily_check_in') &&
+        Boolean(localStorage.getItem('muslim-study-place:cloud:lastSnapshot'))
       )
     }),
-    'Empty cloud login should upload local progress and run server streak check-in',
+    'Empty cloud login should upload local progress, persist its sync base, and run server streak check-in',
+  )
+
+  const cloudTodoForm = emptyCloudPage.locator('.todo-form')
+  await cloudTodoForm.locator('input').fill('Cloud autosync task')
+  await cloudTodoForm.locator('.todo-priority-select select').selectOption('medium')
+  await cloudTodoForm.locator('.todo-difficulty-select select').selectOption('normal')
+  await cloudTodoForm.locator('button[type="submit"]').click()
+  await emptyCloudPage.waitForFunction(() => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+
+    return todos.some((todo) => todo.text === 'Cloud autosync task')
+  })
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.emitAuth('SIGNED_IN')
+  })
+  await emptyCloudPage.waitForFunction(() => {
+    const state = window.__mspSupabaseState
+    const todos = state.appState?.snapshot?.values?.todos || []
+
+    return (
+      state.appState?.revision >= 2 &&
+      todos.some((todo) => todo.text === 'Cloud autosync task')
+    )
+  })
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-conflict').count() === 0,
+    'Repeated signed-in events should not turn a pending local save into a conflict',
+  )
+
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.advanceRevisionWithoutChanges()
+  })
+  await cloudTodoForm.locator('input').fill('Cloud rebased task')
+  await cloudTodoForm.locator('button[type="submit"]').click()
+  await emptyCloudPage.waitForFunction(() => {
+    const state = window.__mspSupabaseState
+    const todos = state.appState?.snapshot?.values?.todos || []
+
+    return (
+      state.appState?.revision >= 4 &&
+      todos.some((todo) => todo.text === 'Cloud rebased task')
+    )
+  })
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-synced').count() === 1 &&
+      await emptyCloudPage.locator('.account-shell.is-conflict').count() === 0,
+    'An unchanged remote snapshot with a newer revision should rebase automatically',
+  )
+  await emptyCloudPage.waitForTimeout(1100)
+  const stableCloudRevision = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appState?.revision,
+  )
+  await emptyCloudPage.evaluate(() => {
+    window.dispatchEvent(new Event('focus'))
+  })
+  await emptyCloudPage.waitForTimeout(1100)
+  assert(
+    await emptyCloudPage.evaluate(
+      (revision) =>
+        window.__mspSupabaseState.appState?.revision === revision,
+      stableCloudRevision,
+    ),
+    'Refocusing the app without local changes should not create a cloud revision',
   )
   await emptyCloudContext.close()
 

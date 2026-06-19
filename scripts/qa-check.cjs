@@ -712,8 +712,10 @@ function installSupabaseMock(initialAppState = null) {
     appState: initialAppState,
     readDelayMs: 0,
     readInFlight: false,
+    appStateReadCount: 0,
     saveDelayMs: 0,
     saveInFlight: false,
+    online: true,
     profiles: [],
     rpcCalls: [],
     session: null,
@@ -729,6 +731,14 @@ function installSupabaseMock(initialAppState = null) {
   }
 
   const state = window.__mspSupabaseState
+  Object.defineProperty(window.navigator, 'onLine', {
+    configurable: true,
+    get: () => state.online,
+  })
+  state.setOnline = (online) => {
+    state.online = online
+    window.dispatchEvent(new Event(online ? 'online' : 'offline'))
+  }
   const user = {
     id: 'qa-user-id',
     email: 'qa@example.com',
@@ -839,6 +849,7 @@ function installSupabaseMock(initialAppState = null) {
       select: () => ({
         maybeSingle: async () => {
           if (table === 'user_app_state') {
+            state.appStateReadCount += 1
             state.readInFlight = true
 
             try {
@@ -1023,17 +1034,38 @@ async function runCloudSyncQa(browser) {
   const stableCloudRevision = await emptyCloudPage.evaluate(
     () => window.__mspSupabaseState.appState?.revision,
   )
+  const focusReadCount = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appStateReadCount,
+  )
   await emptyCloudPage.evaluate(() => {
-    window.dispatchEvent(new Event('focus'))
+    Array.from({ length: 5 }).forEach(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
   })
-  await emptyCloudPage.waitForTimeout(1100)
+  await emptyCloudPage.waitForFunction(
+    (readCount) =>
+      window.__mspSupabaseState.appStateReadCount === readCount + 1 &&
+      window.__mspSupabaseState.readInFlight === false,
+    focusReadCount,
+  )
+  await emptyCloudPage.evaluate(() => {
+    Array.from({ length: 5 }).forEach(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+  })
+  await emptyCloudPage.waitForTimeout(100)
   assert(
     await emptyCloudPage.evaluate(
-      (revision) =>
-        window.__mspSupabaseState.appState?.revision === revision,
-      stableCloudRevision,
+      ({ revision, readCount }) =>
+        window.__mspSupabaseState.appState?.revision === revision &&
+        window.__mspSupabaseState.appStateReadCount === readCount + 1,
+      { revision: stableCloudRevision, readCount: focusReadCount },
     ),
-    'Refocusing the app without local changes should not create a cloud revision',
+    'Focus bursts should collapse into one silent read and no cloud revision',
+  )
+  assert(
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0,
+    'Focus checks should never display the syncing indicator',
   )
 
   await emptyCloudPage.evaluate(() => {
@@ -1069,21 +1101,61 @@ async function runCloudSyncQa(browser) {
   await emptyCloudPage.locator('.account-shell.is-synced').waitFor()
   await emptyCloudPage.evaluate(() => {
     window.__mspSupabaseState.saveDelayMs = 0
+  })
+
+  const ignoredOnlineReadCount = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appStateReadCount,
+  )
+  await emptyCloudPage.evaluate(() => {
+    Array.from({ length: 5 }).forEach(() => {
+      window.dispatchEvent(new Event('online'))
+    })
+  })
+  await emptyCloudPage.waitForTimeout(100)
+  assert(
+    await emptyCloudPage.evaluate(
+      (readCount) =>
+        window.__mspSupabaseState.appStateReadCount === readCount,
+      ignoredOnlineReadCount,
+    ),
+    'Repeated online events without an offline transition should be ignored',
+  )
+
+  const recoveryReadCount = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appStateReadCount,
+  )
+  await emptyCloudPage.evaluate(() => {
     window.__mspSupabaseState.readDelayMs = 1200
-    window.dispatchEvent(new Event('online'))
+    window.__mspSupabaseState.setOnline(false)
+  })
+  await emptyCloudPage.locator('.account-shell.is-offline').waitFor()
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.setOnline(true)
+    Array.from({ length: 4 }).forEach(() => {
+      window.dispatchEvent(new Event('online'))
+    })
   })
   await emptyCloudPage.waitForFunction(
     () => window.__mspSupabaseState?.readInFlight === true,
   )
   await emptyCloudPage.waitForTimeout(850)
   assert(
-    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 1,
-    'A slow network recovery should reveal the syncing indicator after its grace period',
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0 &&
+      await emptyCloudPage.locator('.account-shell.is-offline').count() === 1,
+    'A slow network recovery should remain silent until it returns directly to green',
   )
   await emptyCloudPage.waitForFunction(
     () => window.__mspSupabaseState?.readInFlight === false,
   )
   await emptyCloudPage.locator('.account-shell.is-synced').waitFor()
+  assert(
+    await emptyCloudPage.evaluate(
+      (readCount) =>
+        window.__mspSupabaseState.appStateReadCount === readCount + 1,
+      recoveryReadCount,
+    ),
+    'An offline-to-online burst should perform exactly one recovery read',
+  )
   await emptyCloudPage.evaluate(() => {
     window.__mspSupabaseState.readDelayMs = 0
   })

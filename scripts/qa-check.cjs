@@ -2584,6 +2584,76 @@ async function main() {
   await assertFlameStage(page, today, 1, 'nebula', 200)
   await assertFlameStage(page, today, 1, 'apogee', 300)
 
+  await page.evaluate((today) => {
+    localStorage.setItem(
+      'muslim-study-place:streak',
+      JSON.stringify({
+        current: 1,
+        best: 1,
+        lastActiveDate: today,
+        todayCount: 1,
+        dailyGoal: 2,
+        history: {
+          [today]: {
+            date: today,
+            count: 1,
+            goal: 2,
+            checkedIn: true,
+            completed: false,
+            source: 'check-in',
+          },
+        },
+      }),
+    )
+    localStorage.setItem(
+      'muslim-study-place:flameEvolution',
+      JSON.stringify({
+        stages: {},
+        quests: { 'perfect-week': Date.now() },
+        selectedEffect: 'seven-lights',
+        seenUnlocks: [],
+        pendingUnlocks: ['quest:perfect-week'],
+        revealedHints: {},
+      }),
+    )
+  }, today)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.flame-evolution-reveal.stage-ember')
+  const emberRevealMetrics = await page.evaluate(() => {
+    const reveal = document.querySelector('.flame-evolution-reveal.stage-ember')
+    const rect = reveal?.getBoundingClientRect()
+    const style = reveal ? getComputedStyle(reveal) : null
+
+    return {
+      parentIsBody: reveal?.parentElement === document.body,
+      position: style?.position,
+      zIndex: style?.zIndex,
+      top: rect?.top,
+      left: rect?.left,
+      width: rect?.width,
+      height: rect?.height,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    }
+  })
+  assert(
+    emberRevealMetrics.parentIsBody &&
+      emberRevealMetrics.position === 'fixed' &&
+      Number.parseInt(emberRevealMetrics.zIndex, 10) >= 1000,
+    'Ember flame reveal should render as a top-level fixed modal above the app',
+  )
+  assert(
+    emberRevealMetrics.top <= 1 &&
+      emberRevealMetrics.left <= 1 &&
+      emberRevealMetrics.left + emberRevealMetrics.width >=
+        emberRevealMetrics.viewportWidth - 1 &&
+      emberRevealMetrics.top + emberRevealMetrics.height >=
+        emberRevealMetrics.viewportHeight - 1,
+    'Ember flame reveal should cover the full viewport instead of expanding inside the topbar',
+  )
+  await page.getByRole('button', { name: 'Claim' }).click()
+  await page.waitForSelector('.flame-evolution-reveal', { state: 'detached' })
+
   const assertCompactFlameAccessory = async (effect, quest, check) => {
     await page.evaluate(
       ({ effect, quest }) => {
@@ -2906,56 +2976,11 @@ async function main() {
   )
   await page.getByLabel('Close the book').click()
 
-  const workshopStateBefore = await page.evaluate(
-    () => localStorage.getItem('muslim-study-place:flameEvolution'),
-  )
-  const workshopPreviews = [
-    'Red',
-    'Green',
-    'Blue',
-    'Violet',
-    'Solar',
-    'Eclipse',
-    'Nebula',
-    'Apex',
-    'Crown of seven lights',
-    'Prismatic halo',
-    'Blazing comet',
-    'Golden constellation',
-    'Twin rings',
-    'Crystal core',
-    'Runes fulfilled',
-    'Ascension reveal',
-    'Quest reveal',
-    'Grouped reveal',
-  ]
-
-  for (const previewName of workshopPreviews) {
-    await page.getByRole('button', { name: 'Temporary Flame Workshop' }).click()
-    await page.getByRole('button', { name: previewName, exact: true }).click()
-    assert(
-      await page.locator('.flame-evolution-reveal.is-preview').count() === 1,
-      `Workshop preview missing for ${previewName}`,
-    )
-    await page.getByRole('button', { name: 'Claim' }).click()
-    await page.getByLabel('Open settings').click()
-  }
-
-  await page.getByRole('button', { name: 'Temporary Flame Workshop' }).click()
-  await page.getByRole('button', { name: 'Day unlocked', exact: true }).click()
-  await page.waitForSelector('.streak-unlock-card', { state: 'visible' })
   assert(
-    await page.locator('.streak-unlock-card').count() === 1,
-    'The workshop should play the real Day unlocked animation',
+    await page.getByRole('button', { name: 'Temporary Flame Workshop' }).count() === 0,
+    'Temporary Flame Workshop should be hidden from settings',
   )
-  await page.waitForSelector('.streak-unlock-card', { state: 'detached' })
-  const workshopStateAfter = await page.evaluate(
-    () => localStorage.getItem('muslim-study-place:flameEvolution'),
-  )
-  assert(
-    workshopStateAfter === workshopStateBefore,
-    'Flame workshop previews must not modify durable flame progress',
-  )
+  await page.getByLabel('Close settings').click()
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })

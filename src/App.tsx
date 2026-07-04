@@ -45,11 +45,8 @@ import {
   buildPendingFlameEvolutionCue,
   claimFlameEvolutionUnlocks,
   discoverFlameEvolution,
-  FLAME_QUEST_EFFECTS,
-  FLAME_QUEST_IDS,
   normalizeFlameEvolution,
   revealFlameAchievementHint,
-  SECRET_FLAME_STAGES,
   selectFlameQuestEffect,
 } from './lib/flameEvolution'
 import { normalizeTimerSettings, timerSeconds } from './lib/timer'
@@ -86,7 +83,6 @@ import type {
   BackgroundAsset,
   FlameEvolutionState,
   FlameEvolutionUnlockCue,
-  FlamePreviewRequest,
   FlameQuestEffect,
   FlameUnlockKey,
   MemoryStatus,
@@ -997,72 +993,6 @@ function App() {
     )
   }
 
-  const previewFlame = (request: FlamePreviewRequest) => {
-    setSettingsOpen(false)
-
-    if (request.kind === 'day-unlock') {
-      playStreakUnlockCue({ subtitle: copy.streak.workshopDayUnlock })
-      return
-    }
-
-    const baseCue = {
-      key: Date.now(),
-      claimKeys: [],
-      preview: true,
-    } satisfies Pick<
-      FlameEvolutionUnlockCue,
-      'key' | 'claimKeys' | 'preview'
-    >
-
-    if (request.kind === 'flame') {
-      setFlameEvolutionPreviewCue({
-        ...baseCue,
-        stages: [],
-        quests: [],
-        previewStage: request.stage,
-        previewEffect: request.effect ?? null,
-        previewLabel: request.label,
-        previewKind: 'flame',
-      })
-      return
-    }
-
-    if (request.kind === 'ascension') {
-      setFlameEvolutionPreviewCue({
-        ...baseCue,
-        stages: [request.stage],
-        quests: [],
-        previewStage: request.stage,
-        previewEffect: null,
-        previewLabel: copy.streak.stageNames[request.stage],
-        previewKind: 'ascension',
-      })
-      return
-    }
-
-    if (request.kind === 'quest') {
-      setFlameEvolutionPreviewCue({
-        ...baseCue,
-        stages: [],
-        quests: [request.quest],
-        previewStage: 'ultimate',
-        previewEffect: FLAME_QUEST_EFFECTS[request.quest],
-        previewLabel: copy.streak.questNames[request.quest],
-        previewKind: 'quest',
-      })
-      return
-    }
-
-    setFlameEvolutionPreviewCue({
-      ...baseCue,
-      stages: [...SECRET_FLAME_STAGES],
-      quests: [...FLAME_QUEST_IDS],
-      previewStage: 'apogee',
-      previewEffect: 'runic-sparks',
-      previewKind: 'group',
-    })
-  }
-
   const updateTimerSetting = (key: keyof TimerSettings, value: number) => {
     const nextSettings = normalizeTimerSettings({
       ...timerSettings,
@@ -1925,7 +1855,6 @@ function App() {
         onDailyGoalChange={updateDailyGoal}
         onAddStreakDay={addTemporaryStreakDay}
         onRevealFlameHint={revealFlameHint}
-        onPreviewFlame={previewFlame}
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
         onParticlesEnabledChange={setParticlesEnabled}

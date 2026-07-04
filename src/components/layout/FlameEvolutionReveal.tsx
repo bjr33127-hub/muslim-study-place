@@ -1,4 +1,5 @@
 import { Gift } from 'lucide-react'
+import { createPortal } from 'react-dom'
 import type { AppCopy } from '../../lib/i18n'
 import type {
   FlameEvolutionUnlockCue,
@@ -43,7 +44,7 @@ export function FlameEvolutionReveal({
         ...cue.quests.map((item) => copy.questNames[item]),
       ]
 
-  return (
+  const reveal = (
     <div
       className={[
         'flame-evolution-reveal',
@@ -84,4 +85,6 @@ export function FlameEvolutionReveal({
       </span>
     </div>
   )
+
+  return createPortal(reveal, document.body)
 }

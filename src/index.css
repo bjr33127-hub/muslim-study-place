@@ -782,10 +782,13 @@ a {
   box-shadow: var(--shadow);
 }
 
+.streak-shell {
+  position: relative;
+}
+
 .streak-shell,
 .duo-flame.stage-ember,
 .flame-evolution-reveal.stage-ember {
-  position: relative;
   --flame-panel-accent: rgba(255, 149, 38, 0.5);
   --flame-panel-accent-strong: rgba(255, 185, 70, 0.72);
   --flame-card-a: rgba(255, 154, 40, 0.2);
@@ -2655,7 +2658,7 @@ button.flame-quest {
 .flame-evolution-reveal {
   position: fixed;
   inset: 0;
-  z-index: 320;
+  z-index: 1000;
   display: grid;
   place-items: center;
   align-content: center;
@@ -2829,6 +2832,7 @@ button.flame-quest {
 .flame-reveal-particles {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .flame-reveal-particles i {

@@ -2,7 +2,6 @@ import {
   BookOpen,
   Download,
   Flame,
-  FlaskConical,
   RotateCcw,
   Upload,
   X,
@@ -15,7 +14,6 @@ import type { AppCopy } from '../../lib/i18n'
 import type {
   AppLanguage,
   FlameEvolutionState,
-  FlamePreviewRequest,
   FlameUnlockKey,
   MemoryStatus,
   StreakState,
@@ -25,7 +23,6 @@ import type {
   WidgetLayout,
 } from '../../types/app'
 import { AchievementCodex } from './AchievementCodex'
-import { FlameWorkshop } from './FlameWorkshop'
 
 type SettingsPanelProps = {
   copy: AppCopy['settings']
@@ -51,7 +48,6 @@ type SettingsPanelProps = {
   onDailyGoalChange: (value: number) => void
   onAddStreakDay: () => void
   onRevealFlameHint: (key: FlameUnlockKey) => void
-  onPreviewFlame: (request: FlamePreviewRequest) => void
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
   onParticlesEnabledChange: (value: boolean) => void
@@ -83,7 +79,6 @@ export function SettingsPanel({
   onDailyGoalChange,
   onAddStreakDay,
   onRevealFlameHint,
-  onPreviewFlame,
   onTimerSettingChange,
   onBackgroundDimChange,
   onParticlesEnabledChange,
@@ -91,7 +86,6 @@ export function SettingsPanel({
   onImportData,
 }: SettingsPanelProps) {
   const [codexOpen, setCodexOpen] = useState(false)
-  const [workshopOpen, setWorkshopOpen] = useState(false)
 
   if (!isOpen) {
     return null
@@ -261,17 +255,6 @@ export function SettingsPanel({
               <small>{copy.achievementCodexHint}</small>
             </span>
           </button>
-          <button
-            className="settings-feature-action is-temporary"
-            type="button"
-            onClick={() => setWorkshopOpen(true)}
-          >
-            <FlaskConical size={18} strokeWidth={1.7} />
-            <span>
-              <strong>{copy.flameWorkshop}</strong>
-              <small>{copy.flameWorkshopHint}</small>
-            </span>
-          </button>
         </div>
       </section>
 
@@ -349,19 +332,6 @@ export function SettingsPanel({
               evolution={flameEvolution}
               onClose={() => setCodexOpen(false)}
               onRevealHint={onRevealFlameHint}
-            />,
-            document.body,
-          )
-        : null}
-      {workshopOpen
-        ? createPortal(
-            <FlameWorkshop
-              copy={streakCopy}
-              onClose={() => setWorkshopOpen(false)}
-              onPreview={(request) => {
-                setWorkshopOpen(false)
-                onPreviewFlame(request)
-              }}
             />,
             document.body,
           )

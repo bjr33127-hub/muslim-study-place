@@ -1,4 +1,4 @@
-import { GripHorizontal, X } from 'lucide-react'
+import { GripHorizontal, Minus } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import type { WidgetLayout } from '../../types/app'
@@ -132,7 +132,7 @@ export function WidgetFrame({
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <X size={15} strokeWidth={1.8} />
+            <Minus size={15} strokeWidth={2.2} />
           </button>
         </div>
       ) : (
@@ -152,7 +152,7 @@ export function WidgetFrame({
             aria-label={copy.hide(title)}
             onClick={onClose}
           >
-            <X size={16} strokeWidth={1.8} />
+            <Minus size={16} strokeWidth={2.2} />
           </button>
         </div>
       )}

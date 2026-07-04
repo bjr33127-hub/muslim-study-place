@@ -1,4 +1,5 @@
 import type { TodoDifficulty, TodoItem, TodoPriority } from '../types/app'
+import { DEFAULT_TASK_WINDOW_ID } from './taskWindows'
 
 export type TodoFilter = 'active' | 'completed' | 'all'
 export type TodoSortMode =
@@ -126,6 +127,10 @@ export function normalizeTodo(todo: Partial<TodoItem>, index = 0): TodoItem {
       typeof todo.id === 'string' && todo.id
         ? todo.id
         : `todo-${Date.now()}-${index}`,
+    windowId:
+      typeof todo.windowId === 'string' && todo.windowId
+        ? todo.windowId
+        : DEFAULT_TASK_WINDOW_ID,
     text: cleanText(todo.text),
     priority: normalizePriority(todo.priority),
     difficulty: normalizeDifficulty(todo.difficulty),

@@ -87,9 +87,13 @@ type TodoRenderEntry =
 
 type TodoWidgetProps = {
   copy: AppCopy['todo']
+  windowTitle: string
+  canDeleteWindow: boolean
   todos: TodoItem[]
   activeTaskId?: string
   isTimerRunning: boolean
+  onRenameWindow: (title: string) => void
+  onDeleteWindow: () => void
   onAddTask: (
     text: string,
     requiredPomodoros: number,
@@ -104,6 +108,7 @@ type TodoWidgetProps = {
   ) => void
   onToggleTask: (id: string) => void
   onDeleteTask: (id: string) => void
+  onDeleteTasks: (ids: string[]) => void
   onReorderTask: (sourceId: string, targetId: string) => void
   onRepeatTask: (id: string) => void
   onSetActive: (id: string) => void
@@ -200,13 +205,18 @@ function CompletedStack({ count, label }: { count: number; label: string }) {
 
 export function TodoWidget({
   copy,
+  windowTitle,
+  canDeleteWindow,
   todos,
   activeTaskId,
   isTimerRunning,
+  onRenameWindow,
+  onDeleteWindow,
   onAddTask,
   onUpdateTask,
   onToggleTask,
   onDeleteTask,
+  onDeleteTasks,
   onReorderTask,
   onRepeatTask,
   onSetActive,
@@ -214,6 +224,10 @@ export function TodoWidget({
   onPauseTaskTimer,
 }: TodoWidgetProps) {
   const [draft, setDraft] = useState('')
+  const [titleDraftState, setTitleDraftState] = useState({
+    source: windowTitle,
+    value: windowTitle,
+  })
   const [requiredPomodoros, setRequiredPomodoros] = useState(1)
   const [priority, setPriority] = useState<TodoPriority>('medium')
   const [difficulty, setDifficulty] = useState<TodoDifficulty>('normal')
@@ -290,6 +304,34 @@ export function TodoWidget({
 
     onAddTask(text, requiredPomodoros, priority, difficulty)
     setDraft('')
+  }
+
+  const titleDraft =
+    titleDraftState.source === windowTitle ? titleDraftState.value : windowTitle
+
+  const setTitleDraft = (value: string) => {
+    setTitleDraftState({
+      source: windowTitle,
+      value,
+    })
+  }
+
+  const saveWindowTitle = () => {
+    const nextTitle = titleDraft.trim()
+
+    if (!nextTitle || nextTitle === windowTitle) {
+      setTitleDraftState({
+        source: windowTitle,
+        value: windowTitle,
+      })
+      return
+    }
+
+    onRenameWindow(nextTitle)
+    setTitleDraftState({
+      source: nextTitle,
+      value: nextTitle,
+    })
   }
 
   const shiftGoal = (delta: number) => {
@@ -698,18 +740,26 @@ export function TodoWidget({
             <div className="todo-group-details" aria-label={copy.completedRuns}>
               {group.items.map((item) => {
                 const completedAt = formattedDate(item.completedAt ?? item.updatedAt)
+                const runLabel =
+                  item.repeatIndex > 0
+                    ? copy.repeatBadge(item.repeatIndex)
+                    : copy.originalRun
 
                 return (
                   <div key={item.id} className="todo-run-row">
-                    <span>
-                      {item.repeatIndex > 0
-                        ? copy.repeatBadge(item.repeatIndex)
-                        : copy.originalRun}
-                    </span>
+                    <span>{runLabel}</span>
                     <small>{copy.runCompletedAt(completedAt)}</small>
                     <strong>
                       {item.completedPomodoros}/{item.requiredPomodoros}
                     </strong>
+                    <button
+                      className="quiet-icon"
+                      type="button"
+                      aria-label={copy.deleteCompletedRun(runLabel)}
+                      onClick={() => onDeleteTask(item.id)}
+                    >
+                      <Trash2 size={13} strokeWidth={1.8} />
+                    </button>
                   </div>
                 )
               })}
@@ -754,6 +804,14 @@ export function TodoWidget({
           >
             <RotateCcw size={14} strokeWidth={1.9} />
           </button>
+          <button
+            className="quiet-icon"
+            type="button"
+            aria-label={copy.deleteCompletedGroup(group.template.text)}
+            onClick={() => onDeleteTasks(group.items.map((item) => item.id))}
+          >
+            <Trash2 size={14} strokeWidth={1.8} />
+          </button>
         </div>
       </div>
     )
@@ -761,6 +819,32 @@ export function TodoWidget({
 
   return (
     <div className="todo-widget">
+      <div className="todo-window-bar">
+        <label>
+          <span>{copy.windowName}</span>
+          <input
+            value={titleDraft}
+            aria-label={copy.renameWindow(windowTitle)}
+            onBlur={saveWindowTitle}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur()
+              }
+            }}
+          />
+        </label>
+        {canDeleteWindow ? (
+          <button
+            className="quiet-icon"
+            type="button"
+            aria-label={copy.deleteWindow(windowTitle)}
+            onClick={onDeleteWindow}
+          >
+            <Trash2 size={15} strokeWidth={1.8} />
+          </button>
+        ) : null}
+      </div>
       <form className="todo-form" onSubmit={addTodo}>
         <div className="todo-form-main">
           <input

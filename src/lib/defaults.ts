@@ -1,5 +1,6 @@
 import type {
   BackgroundAsset,
+  FlameEvolutionState,
   PomodoroRunState,
   StreakState,
   TimerSettings,
@@ -84,6 +85,15 @@ export const DEFAULT_STREAK: StreakState = {
   todayCount: 0,
   dailyGoal: 1,
   history: {},
+}
+
+export const DEFAULT_FLAME_EVOLUTION: FlameEvolutionState = {
+  stages: {},
+  quests: {},
+  selectedEffect: null,
+  seenUnlocks: [],
+  pendingUnlocks: [],
+  revealedHints: {},
 }
 
 export const DEFAULT_POMODORO_RUN: PomodoroRunState = {

@@ -7,13 +7,22 @@ export type WidgetId =
 export type AppLanguage = 'fr' | 'en'
 
 export type WidgetLayout = {
-  id: WidgetId
+  id: string
   x: number
   y: number
   width: number
   height: number
   visible: boolean
   z: number
+}
+
+export type TaskWindow = {
+  id: string
+  title: string
+  rank: number
+  createdAt: number
+  updatedAt: number
+  deletable: boolean
 }
 
 export type BackgroundAsset = {
@@ -40,6 +49,7 @@ export type TodoDifficulty = 'easy' | 'normal' | 'hard' | 'intense'
 
 export type TodoItem = {
   id: string
+  windowId?: string
   text: string
   priority: TodoPriority
   difficulty: TodoDifficulty
@@ -90,6 +100,75 @@ export type StreakUnlockCue = {
   taskLabel?: string
   subtitle?: string
 }
+
+export type SecretFlameStage = 'solar' | 'eclipse' | 'nebula' | 'apogee'
+export type BaseFlameStage = 'ember' | 'verdant' | 'azure' | 'ultimate'
+export type FlameStage = BaseFlameStage | SecretFlameStage
+
+export type FlameQuestId =
+  | 'perfect-week'
+  | 'four-perfect-weeks'
+  | 'twelve-focus-day'
+  | 'hundred-stars'
+  | 'ten-run'
+  | 'deep-task'
+  | 'twenty-five-tasks'
+
+export type FlameQuestEffect =
+  | 'seven-lights'
+  | 'prismatic-halo'
+  | 'comet-trail'
+  | 'constellation'
+  | 'twin-rings'
+  | 'crystal-core'
+  | 'runic-sparks'
+
+export type FlameUnlockKey =
+  | `stage:${SecretFlameStage}`
+  | `quest:${FlameQuestId}`
+
+export type FlameEvolutionState = {
+  stages: Partial<Record<SecretFlameStage, number>>
+  quests: Partial<Record<FlameQuestId, number>>
+  selectedEffect: FlameQuestEffect | null
+  seenUnlocks: string[]
+  pendingUnlocks: FlameUnlockKey[]
+  revealedHints: Partial<Record<FlameUnlockKey, number>>
+}
+
+export type FlameEvolutionUnlockCue = {
+  key: number
+  stages: SecretFlameStage[]
+  quests: FlameQuestId[]
+  claimKeys: FlameUnlockKey[]
+  preview?: boolean
+  previewStage?: FlameStage
+  previewEffect?: FlameQuestEffect | null
+  previewLabel?: string
+  previewKind?: 'flame' | 'ascension' | 'quest' | 'group'
+}
+
+export type FlamePreviewRequest =
+  | {
+      kind: 'flame'
+      stage: FlameStage
+      effect?: FlameQuestEffect | null
+      label: string
+    }
+  | {
+      kind: 'ascension'
+      stage: SecretFlameStage
+    }
+  | {
+      kind: 'quest'
+      quest: FlameQuestId
+    }
+  | {
+      kind: 'group'
+    }
+  | {
+      kind: 'day-unlock'
+    }
 
 export type PomodoroRunState = {
   targetPomodoros: number

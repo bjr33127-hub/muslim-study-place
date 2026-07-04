@@ -2,49 +2,32 @@ import { X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppCopy } from '../../lib/i18n'
+import {
+  FLAME_QUEST_EFFECTS,
+  FLAME_QUEST_IDS,
+  getBaseFlameStage,
+  getActiveSecretFlameStage,
+} from '../../lib/flameEvolution'
 import { getStreakWeekSummary } from '../../lib/streak'
-import type { StreakState, StreakUnlockCue } from '../../types/app'
+import type {
+  FlameEvolutionState,
+  FlameEvolutionUnlockCue,
+  FlameQuestEffect,
+  StreakState,
+  StreakUnlockCue,
+} from '../../types/app'
+import { FlameEvolutionReveal } from './FlameEvolutionReveal'
+import { FlameMark } from './FlameVisual'
 
 type StreakFlameProps = {
   streak: StreakState
   copy: AppCopy['streak']
   igniteKey: number
   unlockCue: StreakUnlockCue | null
-}
-
-type FlameStage = 'ember' | 'verdant' | 'azure' | 'ultimate'
-
-function getFlameStage(current: number): FlameStage {
-  if (current >= 100) {
-    return 'ultimate'
-  }
-
-  if (current >= 30) {
-    return 'azure'
-  }
-
-  if (current >= 7) {
-    return 'verdant'
-  }
-
-  return 'ember'
-}
-
-function FlameMark({ large = false, stage }: { large?: boolean; stage: FlameStage }) {
-  return (
-    <span
-      className={['duo-flame', large ? 'is-large' : '', `stage-${stage}`].filter(Boolean).join(' ')}
-      aria-hidden="true"
-    >
-      <span className="duo-flame-glow" />
-      <span className="duo-flame-back" />
-      <span className="duo-flame-mid" />
-      <span className="duo-flame-core" />
-      <span className="duo-spark spark-one" />
-      <span className="duo-spark spark-two" />
-      <span className="duo-spark spark-three" />
-    </span>
-  )
+  evolution: FlameEvolutionState
+  evolutionCue: FlameEvolutionUnlockCue | null
+  onEffectChange: (effect: FlameQuestEffect | null) => void
+  onClaimEvolution: (cue: FlameEvolutionUnlockCue) => void
 }
 
 export function StreakFlame({
@@ -52,6 +35,10 @@ export function StreakFlame({
   copy,
   igniteKey,
   unlockCue,
+  evolution,
+  evolutionCue,
+  onEffectChange,
+  onClaimEvolution,
 }: StreakFlameProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isIgniting, setIsIgniting] = useState(false)
@@ -60,9 +47,16 @@ export function StreakFlame({
   const [isUnlocked, setIsUnlocked] = useState(false)
   const week = useMemo(() => getStreakWeekSummary(streak), [streak])
   const isLit = streak.current > 0
-  const isMilestone = [7, 30, 100, 365].includes(streak.current)
-  const flameStage = getFlameStage(streak.current)
+  const isMilestone = [7, 30, 100, 120, 150, 200, 300, 365].includes(streak.current)
+  const secretStage = getActiveSecretFlameStage(evolution)
+  const baseFlameStage = getBaseFlameStage(streak.current)
+  const flameStage = secretStage ?? baseFlameStage
+  const currentStageName = secretStage
+    ? copy.stageNames[secretStage]
+    : copy.baseStageNames[baseFlameStage]
+  const selectedEffect = evolution.selectedEffect
   const isUnlocking = Boolean(activeUnlockCue)
+  const isAscending = Boolean(evolutionCue)
   const unlockSubtitle =
     activeUnlockCue?.subtitle ??
     (activeUnlockCue?.taskLabel
@@ -123,6 +117,8 @@ export function StreakFlame({
         isMilestone ? 'is-milestone' : '',
         isUnlocking ? 'is-unlocking' : '',
         isUnlocked ? 'is-unlocked' : '',
+        isAscending ? 'is-ascending' : '',
+        selectedEffect ? `effect-${selectedEffect}` : '',
         `stage-${flameStage}`,
       ].filter(Boolean).join(' ')}
     >
@@ -133,16 +129,19 @@ export function StreakFlame({
           isIgniting ? 'is-igniting' : '',
           isMilestone ? 'is-milestone' : '',
           isUnlocking ? 'is-unlocking' : '',
+          isAscending ? 'is-ascending' : '',
+          selectedEffect ? `effect-${selectedEffect}` : '',
           `stage-${flameStage}`,
         ].filter(Boolean).join(' ')}
         type="button"
         data-flame-stage={flameStage}
+        data-flame-effect={selectedEffect ?? 'none'}
         aria-label={copy.open}
         aria-expanded={isOpen}
         onClick={() => setIsOpen((current) => !current)}
       >
         <span className="flame-orb">
-          <FlameMark stage={flameStage} />
+          <FlameMark effect={selectedEffect} stage={flameStage} />
         </span>
         <span className="streak-copy">
           <strong aria-live="polite">{streak.current}</strong>
@@ -174,7 +173,7 @@ export function StreakFlame({
         >
           <div className="streak-unlock-head">
             <span className="streak-unlock-icon" aria-hidden="true">
-              <FlameMark stage={flameStage} />
+              <FlameMark effect={selectedEffect} stage={flameStage} />
             </span>
             <span>
               <strong>{copy.unlockTitle}</strong>
@@ -215,7 +214,7 @@ export function StreakFlame({
         >
           <div className="streak-popover-head">
             <div className="streak-hero-flame">
-              <FlameMark large stage={flameStage} />
+              <FlameMark effect={selectedEffect} large stage={flameStage} />
             </div>
             <button
               className="quiet-icon streak-close"
@@ -299,7 +298,85 @@ export function StreakFlame({
               <strong>{week.totalCount}</strong>
             </span>
           </div>
+
+          <div className="flame-secrets">
+            <div className="flame-secrets-head">
+              <span>{copy.secretTitle}</span>
+              <strong>
+                {currentStageName}
+              </strong>
+            </div>
+            <div className="flame-ascension-status">
+              <small>{copy.ascensionTitle}</small>
+              <strong>
+                {currentStageName}
+              </strong>
+            </div>
+            <button
+              className={`flame-effect-none${selectedEffect === null ? ' is-selected' : ''}`}
+              type="button"
+              onClick={() => onEffectChange(null)}
+            >
+              <span>{copy.noSecretEffect}</span>
+              <strong>
+                {selectedEffect === null ? copy.equippedEffect : copy.equipEffect}
+              </strong>
+            </button>
+            <div className="flame-quest-grid">
+              {FLAME_QUEST_IDS.map((quest) => {
+                const unlockedAt = evolution.quests[quest]
+                const effect = FLAME_QUEST_EFFECTS[quest]
+                const selected = selectedEffect === effect
+
+                if (!unlockedAt) {
+                  return (
+                    <div className="flame-quest is-locked" key={quest}>
+                      <span className="flame-quest-glyph" aria-hidden="true">?</span>
+                      <span>
+                        <strong>{copy.mysteryName}</strong>
+                        <small>{copy.questRiddles[quest]}</small>
+                      </span>
+                    </div>
+                  )
+                }
+
+                return (
+                  <button
+                    className={`flame-quest is-unlocked${selected ? ' is-selected' : ''}`}
+                    key={quest}
+                    type="button"
+                    onClick={() => onEffectChange(effect)}
+                  >
+                    <span className={`flame-quest-glyph effect-${effect}`} aria-hidden="true">
+                      <i />
+                    </span>
+                    <span>
+                      <strong>{copy.questNames[quest]}</strong>
+                      <small>
+                        {copy.unlockedOn(new Date(unlockedAt).toLocaleDateString())}
+                      </small>
+                    </span>
+                    <em>{selected ? copy.equippedEffect : copy.equipEffect}</em>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
+      ) : null}
+
+      {evolutionCue ? (
+        <FlameEvolutionReveal
+          copy={copy}
+          cue={evolutionCue}
+          stage={evolutionCue.previewStage ?? flameStage}
+          effect={
+            evolutionCue.preview
+              ? evolutionCue.previewEffect ?? null
+              : selectedEffect
+          }
+          onClaim={() => onClaimEvolution(evolutionCue)}
+        />
       ) : null}
     </div>
   )

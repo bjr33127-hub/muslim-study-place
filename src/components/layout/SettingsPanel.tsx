@@ -1,56 +1,43 @@
-import { Download, Flame, RotateCcw, Upload, X } from 'lucide-react'
+import {
+  BookOpen,
+  Download,
+  Flame,
+  FlaskConical,
+  RotateCcw,
+  Upload,
+  X,
+} from 'lucide-react'
+import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { WIDGET_ORDER } from '../../lib/defaults'
 import { LANGUAGES } from '../../lib/i18n'
+import type { AppCopy } from '../../lib/i18n'
 import type {
   AppLanguage,
+  FlameEvolutionState,
+  FlamePreviewRequest,
+  FlameUnlockKey,
   MemoryStatus,
   StreakState,
+  TaskWindow,
   TimerSettings,
   WidgetId,
   WidgetLayout,
 } from '../../types/app'
+import { AchievementCodex } from './AchievementCodex'
+import { FlameWorkshop } from './FlameWorkshop'
 
 type SettingsPanelProps = {
-  copy: {
-    title: string
-    subtitle: string
-    close: string
-    widgets: string
-    resetLayout: string
-    language: string
-    interfaceLanguage: string
-    pomodoro: string
-    focusMinutes: string
-    shortBreakMinutes: string
-    longBreakMinutes: string
-    longBreakEvery: string
-    focusFlame: string
-    dailyFlameTarget: string
-    addStreakDay: string
-    current: string
-    best: string
-    today: string
-    background: string
-    dimBackground: string
-    magicParticles: string
-    memory: string
-    memoryReady: string
-    memoryUnavailable: string
-    memoryKeys: (count: number) => string
-    memoryUpdated: (value: string) => string
-    memoryNever: string
-    exportData: string
-    importData: string
-    importHint: string
-    credit: string
-    creditCopy: string
-    creditLink: string
-  }
+  copy: AppCopy['settings']
+  streakCopy: AppCopy['streak']
   isOpen: boolean
   language: AppLanguage
   widgetLabels: Record<WidgetId, string>
   layouts: Record<WidgetId, WidgetLayout>
+  taskWindows: TaskWindow[]
+  taskWindowLayouts: Record<string, WidgetLayout>
   streak: StreakState
+  flameEvolution: FlameEvolutionState
   timerSettings: TimerSettings
   memoryStatus: MemoryStatus
   memoryNotice: string
@@ -60,8 +47,11 @@ type SettingsPanelProps = {
   onLanguageChange: (language: AppLanguage) => void
   onResetLayout: () => void
   onToggleWidget: (id: WidgetId) => void
+  onToggleTaskWindow: (id: string) => void
   onDailyGoalChange: (value: number) => void
   onAddStreakDay: () => void
+  onRevealFlameHint: (key: FlameUnlockKey) => void
+  onPreviewFlame: (request: FlamePreviewRequest) => void
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
   onParticlesEnabledChange: (value: boolean) => void
@@ -71,11 +61,15 @@ type SettingsPanelProps = {
 
 export function SettingsPanel({
   copy,
+  streakCopy,
   isOpen,
   language,
   widgetLabels,
   layouts,
+  taskWindows,
+  taskWindowLayouts,
   streak,
+  flameEvolution,
   timerSettings,
   memoryStatus,
   memoryNotice,
@@ -85,14 +79,20 @@ export function SettingsPanel({
   onLanguageChange,
   onResetLayout,
   onToggleWidget,
+  onToggleTaskWindow,
   onDailyGoalChange,
   onAddStreakDay,
+  onRevealFlameHint,
+  onPreviewFlame,
   onTimerSettingChange,
   onBackgroundDimChange,
   onParticlesEnabledChange,
   onExportData,
   onImportData,
 }: SettingsPanelProps) {
+  const [codexOpen, setCodexOpen] = useState(false)
+  const [workshopOpen, setWorkshopOpen] = useState(false)
+
   if (!isOpen) {
     return null
   }
@@ -139,13 +139,23 @@ export function SettingsPanel({
       <section className="settings-section">
         <h3>{copy.widgets}</h3>
         <div className="settings-list">
-          {WIDGET_ORDER.map((id) => (
+          {WIDGET_ORDER.filter((id) => id !== 'todo').map((id) => (
             <label key={id} className="settings-toggle">
               <span>{widgetLabels[id]}</span>
               <input
                 type="checkbox"
                 checked={layouts[id].visible}
                 onChange={() => onToggleWidget(id)}
+              />
+            </label>
+          ))}
+          {taskWindows.map((window) => (
+            <label key={window.id} className="settings-toggle">
+              <span>{window.title}</span>
+              <input
+                type="checkbox"
+                checked={Boolean(taskWindowLayouts[window.id]?.visible)}
+                onChange={() => onToggleTaskWindow(window.id)}
               />
             </label>
           ))}
@@ -239,6 +249,30 @@ export function SettingsPanel({
           <Flame size={15} strokeWidth={1.8} />
           {copy.addStreakDay}
         </button>
+        <div className="flame-settings-tools">
+          <button
+            className="settings-feature-action"
+            type="button"
+            onClick={() => setCodexOpen(true)}
+          >
+            <BookOpen size={18} strokeWidth={1.7} />
+            <span>
+              <strong>{copy.achievementCodex}</strong>
+              <small>{copy.achievementCodexHint}</small>
+            </span>
+          </button>
+          <button
+            className="settings-feature-action is-temporary"
+            type="button"
+            onClick={() => setWorkshopOpen(true)}
+          >
+            <FlaskConical size={18} strokeWidth={1.7} />
+            <span>
+              <strong>{copy.flameWorkshop}</strong>
+              <small>{copy.flameWorkshopHint}</small>
+            </span>
+          </button>
+        </div>
       </section>
 
       <section className="settings-section">
@@ -307,6 +341,31 @@ export function SettingsPanel({
           {copy.creditLink}
         </a>
       </section>
+
+      {codexOpen
+        ? createPortal(
+            <AchievementCodex
+              copy={streakCopy}
+              evolution={flameEvolution}
+              onClose={() => setCodexOpen(false)}
+              onRevealHint={onRevealFlameHint}
+            />,
+            document.body,
+          )
+        : null}
+      {workshopOpen
+        ? createPortal(
+            <FlameWorkshop
+              copy={streakCopy}
+              onClose={() => setWorkshopOpen(false)}
+              onPreview={(request) => {
+                setWorkshopOpen(false)
+                onPreviewFlame(request)
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </aside>
   )
 }

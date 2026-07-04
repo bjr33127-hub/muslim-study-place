@@ -14,6 +14,7 @@ import { useCloudSync } from './hooks/useCloudSync'
 import { usePersistentState } from './hooks/usePersistentState'
 import {
   BUILT_IN_BACKGROUNDS,
+  DEFAULT_FLAME_EVOLUTION,
   DEFAULT_LAYOUTS,
   DEFAULT_POMODORO_RUN,
   DEFAULT_STREAK,
@@ -40,6 +41,17 @@ import {
   setStreakDailyGoal,
   todayKey,
 } from './lib/streak'
+import {
+  buildPendingFlameEvolutionCue,
+  claimFlameEvolutionUnlocks,
+  discoverFlameEvolution,
+  FLAME_QUEST_EFFECTS,
+  FLAME_QUEST_IDS,
+  normalizeFlameEvolution,
+  revealFlameAchievementHint,
+  SECRET_FLAME_STAGES,
+  selectFlameQuestEffect,
+} from './lib/flameEvolution'
 import { normalizeTimerSettings, timerSeconds } from './lib/timer'
 import {
   clampPomodoros,
@@ -51,6 +63,12 @@ import {
   seedTodos,
   todoRootId,
 } from './lib/todos'
+import {
+  DEFAULT_TASK_WINDOW_ID,
+  DEFAULT_TASK_WINDOWS,
+  normalizeTaskWindowLayouts,
+  normalizeTaskWindows,
+} from './lib/taskWindows'
 import { publicPath } from './lib/publicPath'
 import {
   DEFAULT_LANGUAGE,
@@ -66,9 +84,15 @@ import {
 import type {
   AppLanguage,
   BackgroundAsset,
+  FlameEvolutionState,
+  FlameEvolutionUnlockCue,
+  FlamePreviewRequest,
+  FlameQuestEffect,
+  FlameUnlockKey,
   MemoryStatus,
   PomodoroRunState,
   StreakUnlockCue,
+  TaskWindow,
   TaskPomodoroMemory,
   TimerSettings,
   TimerMode,
@@ -88,6 +112,7 @@ const widgetIcons: Record<WidgetId, ReactNode> = {
 
 const CURRENT_LAYOUT_VERSION = 11
 const STREAK_TASK_UNLOCK_KEY = 'muslim-study-place:streak:lastTaskUnlockDate'
+const STATIC_WIDGET_ORDER = WIDGET_ORDER.filter((id) => id !== 'todo')
 
 const DEFAULT_MEMORY_STATUS: MemoryStatus = {
   available: false,
@@ -210,6 +235,38 @@ function App() {
     () => mergeDefaultLayouts(storedLayouts),
     [storedLayouts],
   )
+  const [taskWindowsState, setTaskWindows] = usePersistentState<TaskWindow[]>(
+    'taskWindows',
+    DEFAULT_TASK_WINDOWS,
+  )
+  const taskWindows = useMemo(
+    () => normalizeTaskWindows(taskWindowsState),
+    [taskWindowsState],
+  )
+  const displayedTaskWindows = useMemo(
+    () =>
+      taskWindows.map((window) => ({
+        ...window,
+        title:
+          window.id === DEFAULT_TASK_WINDOW_ID &&
+          window.title === DEFAULT_TASK_WINDOWS[0].title
+            ? widgetLabels.todo
+            : window.title,
+      })),
+    [taskWindows, widgetLabels.todo],
+  )
+  const [storedTaskWindowLayouts, setTaskWindowLayouts] = usePersistentState<
+    Record<string, WidgetLayout>
+  >('taskWindowLayouts', {})
+  const taskWindowLayouts = useMemo(
+    () =>
+      normalizeTaskWindowLayouts(
+        storedTaskWindowLayouts,
+        taskWindows,
+        layouts.todo ?? DEFAULT_LAYOUTS.todo,
+      ),
+    [layouts.todo, storedTaskWindowLayouts, taskWindows],
+  )
   const [selectedBackgroundId, setSelectedBackgroundId] = usePersistentState(
     'selectedBackground',
     'train',
@@ -272,11 +329,28 @@ function App() {
   const [bestRunBurstKey, setBestRunBurstKey] = useState(0)
   const [streakState, setStreakState] = usePersistentState('streak', DEFAULT_STREAK)
   const streak = useMemo(() => normalizeStreak(streakState), [streakState])
+  const [flameEvolutionState, setFlameEvolutionState] =
+    usePersistentState<FlameEvolutionState>(
+      'flameEvolution',
+      DEFAULT_FLAME_EVOLUTION,
+    )
+  const flameEvolution = useMemo(
+    () => normalizeFlameEvolution(flameEvolutionState),
+    [flameEvolutionState],
+  )
   const previousStreakRef = useRef(streak)
   const [streakIgniteKey, setStreakIgniteKey] = useState(0)
   const lastTaskUnlockDateRef = useRef<string | null>(null)
   const [streakUnlockCue, setStreakUnlockCue] =
     useState<StreakUnlockCue | null>(null)
+  const [flameEvolutionPreviewCue, setFlameEvolutionPreviewCue] =
+    useState<FlameEvolutionUnlockCue | null>(null)
+  const pendingFlameEvolutionCue = useMemo(
+    () => buildPendingFlameEvolutionCue(flameEvolution),
+    [flameEvolution],
+  )
+  const flameEvolutionCue =
+    flameEvolutionPreviewCue ?? pendingFlameEvolutionCue
   const [backgroundDim, setBackgroundDim] = usePersistentState(
     'settings:backgroundDim',
     72,
@@ -324,6 +398,27 @@ function App() {
 
     previousRunRef.current = run
   }, [run])
+
+  useEffect(() => {
+    const discovery = discoverFlameEvolution(flameEvolution, {
+      streak,
+      run,
+      todos,
+    })
+    const currentSerialized = JSON.stringify(flameEvolution)
+    const nextSerialized = JSON.stringify(discovery.state)
+
+    if (currentSerialized !== nextSerialized) {
+      setFlameEvolutionState(discovery.state)
+    }
+
+  }, [
+    flameEvolution,
+    run,
+    setFlameEvolutionState,
+    streak,
+    todos,
+  ])
 
   useEffect(() => {
     document.documentElement.lang = language
@@ -569,19 +664,32 @@ function App() {
 
   const updateLayout = useCallback(
     (layout: WidgetLayout) => {
+      const id = layout.id as WidgetId
+
       setLayouts((current) => ({
         ...mergeDefaultLayouts(current),
-        [layout.id]: layout,
+        [id]: { ...layout, id },
       }))
     },
     [setLayouts],
+  )
+
+  const maxLayoutZ = useCallback(
+    (
+      fixedLayouts = layouts,
+      windowLayouts = taskWindowLayouts,
+    ) => Math.max(
+      ...WIDGET_ORDER.map((widgetId) => fixedLayouts[widgetId].z),
+      ...Object.values(windowLayouts).map((layout) => layout.z),
+    ),
+    [layouts, taskWindowLayouts],
   )
 
   const focusWidget = useCallback(
     (id: WidgetId) => {
       setLayouts((current) => {
         const merged = mergeDefaultLayouts(current)
-        const maxZ = Math.max(...WIDGET_ORDER.map((widgetId) => merged[widgetId].z))
+        const maxZ = maxLayoutZ(merged)
 
         return {
           ...merged,
@@ -593,7 +701,7 @@ function App() {
         }
       })
     },
-    [setLayouts],
+    [maxLayoutZ, setLayouts],
   )
 
   const toggleWidget = useCallback(
@@ -601,7 +709,7 @@ function App() {
       setLayouts((current) => {
         const merged = mergeDefaultLayouts(current)
         const nextVisible = !merged[id].visible
-        const maxZ = Math.max(...WIDGET_ORDER.map((widgetId) => merged[widgetId].z))
+        const maxZ = maxLayoutZ(merged)
 
         return {
           ...merged,
@@ -613,7 +721,7 @@ function App() {
         }
       })
     },
-    [setLayouts],
+    [maxLayoutZ, setLayouts],
   )
 
   const hideWidget = useCallback(
@@ -630,6 +738,102 @@ function App() {
       })
     },
     [setLayouts],
+  )
+
+  const updateTaskWindowLayout = useCallback(
+    (layout: WidgetLayout) => {
+      setTaskWindowLayouts((current) => ({
+        ...normalizeTaskWindowLayouts(
+          current,
+          taskWindows,
+          layouts.todo ?? DEFAULT_LAYOUTS.todo,
+        ),
+        [layout.id]: layout,
+      }))
+    },
+    [layouts.todo, setTaskWindowLayouts, taskWindows],
+  )
+
+  const focusTaskWindow = useCallback(
+    (id: string) => {
+      setTaskWindowLayouts((current) => {
+        const merged = normalizeTaskWindowLayouts(
+          current,
+          taskWindows,
+          layouts.todo ?? DEFAULT_LAYOUTS.todo,
+        )
+        const layout = merged[id]
+
+        if (!layout) {
+          return merged
+        }
+
+        return {
+          ...merged,
+          [id]: {
+            ...layout,
+            visible: true,
+            z: maxLayoutZ(layouts, merged) + 1,
+          },
+        }
+      })
+    },
+    [layouts, maxLayoutZ, setTaskWindowLayouts, taskWindows],
+  )
+
+  const toggleTaskWindow = useCallback(
+    (id: string) => {
+      setTaskWindowLayouts((current) => {
+        const merged = normalizeTaskWindowLayouts(
+          current,
+          taskWindows,
+          layouts.todo ?? DEFAULT_LAYOUTS.todo,
+        )
+        const layout = merged[id]
+
+        if (!layout) {
+          return merged
+        }
+
+        const nextVisible = !layout.visible
+
+        return {
+          ...merged,
+          [id]: {
+            ...layout,
+            visible: nextVisible,
+            z: nextVisible ? maxLayoutZ(layouts, merged) + 1 : layout.z,
+          },
+        }
+      })
+    },
+    [layouts, maxLayoutZ, setTaskWindowLayouts, taskWindows],
+  )
+
+  const hideTaskWindow = useCallback(
+    (id: string) => {
+      setTaskWindowLayouts((current) => {
+        const merged = normalizeTaskWindowLayouts(
+          current,
+          taskWindows,
+          layouts.todo ?? DEFAULT_LAYOUTS.todo,
+        )
+        const layout = merged[id]
+
+        if (!layout) {
+          return merged
+        }
+
+        return {
+          ...merged,
+          [id]: {
+            ...layout,
+            visible: false,
+          },
+        }
+      })
+    },
+    [layouts.todo, setTaskWindowLayouts, taskWindows],
   )
 
   const handleUpload = async (files: FileList | null) => {
@@ -766,6 +970,99 @@ function App() {
     setSettingsOpen(false)
   }
 
+  const updateFlameQuestEffect = (effect: FlameQuestEffect | null) => {
+    setFlameEvolutionState((current) =>
+      selectFlameQuestEffect(normalizeFlameEvolution(current), effect),
+    )
+  }
+
+  const claimFlameEvolution = (cue: FlameEvolutionUnlockCue) => {
+    if (cue.preview) {
+      setFlameEvolutionPreviewCue(null)
+      return
+    }
+
+    setFlameEvolutionState((current) =>
+      claimFlameEvolutionUnlocks(
+        normalizeFlameEvolution(current),
+        cue.claimKeys,
+      ),
+    )
+    setFlameEvolutionPreviewCue(null)
+  }
+
+  const revealFlameHint = (key: FlameUnlockKey) => {
+    setFlameEvolutionState((current) =>
+      revealFlameAchievementHint(normalizeFlameEvolution(current), key),
+    )
+  }
+
+  const previewFlame = (request: FlamePreviewRequest) => {
+    setSettingsOpen(false)
+
+    if (request.kind === 'day-unlock') {
+      playStreakUnlockCue({ subtitle: copy.streak.workshopDayUnlock })
+      return
+    }
+
+    const baseCue = {
+      key: Date.now(),
+      claimKeys: [],
+      preview: true,
+    } satisfies Pick<
+      FlameEvolutionUnlockCue,
+      'key' | 'claimKeys' | 'preview'
+    >
+
+    if (request.kind === 'flame') {
+      setFlameEvolutionPreviewCue({
+        ...baseCue,
+        stages: [],
+        quests: [],
+        previewStage: request.stage,
+        previewEffect: request.effect ?? null,
+        previewLabel: request.label,
+        previewKind: 'flame',
+      })
+      return
+    }
+
+    if (request.kind === 'ascension') {
+      setFlameEvolutionPreviewCue({
+        ...baseCue,
+        stages: [request.stage],
+        quests: [],
+        previewStage: request.stage,
+        previewEffect: null,
+        previewLabel: copy.streak.stageNames[request.stage],
+        previewKind: 'ascension',
+      })
+      return
+    }
+
+    if (request.kind === 'quest') {
+      setFlameEvolutionPreviewCue({
+        ...baseCue,
+        stages: [],
+        quests: [request.quest],
+        previewStage: 'ultimate',
+        previewEffect: FLAME_QUEST_EFFECTS[request.quest],
+        previewLabel: copy.streak.questNames[request.quest],
+        previewKind: 'quest',
+      })
+      return
+    }
+
+    setFlameEvolutionPreviewCue({
+      ...baseCue,
+      stages: [...SECRET_FLAME_STAGES],
+      quests: [...FLAME_QUEST_IDS],
+      previewStage: 'apogee',
+      previewEffect: 'runic-sparks',
+      previewKind: 'group',
+    })
+  }
+
   const updateTimerSetting = (key: keyof TimerSettings, value: number) => {
     const nextSettings = normalizeTimerSettings({
       ...timerSettings,
@@ -805,6 +1102,9 @@ function App() {
 
   const resetLayout = () => {
     setLayouts(DEFAULT_LAYOUTS)
+    setTaskWindowLayouts(
+      normalizeTaskWindowLayouts({}, taskWindows, DEFAULT_LAYOUTS.todo),
+    )
     setLayoutVersion(CURRENT_LAYOUT_VERSION)
   }
 
@@ -844,42 +1144,161 @@ function App() {
     }
   }
 
-  const nextManualRank = () => {
+  const addTaskWindow = () => {
+    const now = Date.now()
+    const id = `task-window-${now}`
+    const title = copy.todo.newWindowTitle(taskWindows.length + 1)
+    const rank = taskWindows.length
+      ? Math.max(...taskWindows.map((window) => window.rank)) + 1
+      : 1
+
+    setTaskWindows((current) =>
+      normalizeTaskWindows([
+        ...current,
+        {
+          id,
+          title,
+          rank,
+          createdAt: now,
+          updatedAt: now,
+          deletable: true,
+        },
+      ]),
+    )
+    setTaskWindowLayouts((current) => {
+      const nextWindows = normalizeTaskWindows([
+        ...taskWindows,
+        {
+          id,
+          title,
+          rank,
+          createdAt: now,
+          updatedAt: now,
+          deletable: true,
+        },
+      ])
+      const normalized = normalizeTaskWindowLayouts(
+        current,
+        nextWindows,
+        layouts.todo ?? DEFAULT_LAYOUTS.todo,
+      )
+
+      return {
+        ...normalized,
+        [id]: {
+          ...normalized[id],
+          visible: true,
+          z: maxLayoutZ(layouts, normalized) + 1,
+        },
+      }
+    })
+  }
+
+  const renameTaskWindow = (id: string, title: string) => {
+    const trimmed = title.trim()
+
+    if (!trimmed) {
+      return
+    }
+
+    setTaskWindows((current) =>
+      normalizeTaskWindows(current).map((window) =>
+        window.id === id
+          ? { ...window, title: trimmed, updatedAt: Date.now() }
+          : window,
+      ),
+    )
+  }
+
+  const deleteTaskWindow = (id: string) => {
+    const window = displayedTaskWindows.find((item) => item.id === id)
+
+    if (!window?.deletable) {
+      return
+    }
+
+    if (!globalThis.confirm(copy.todo.deleteWindowConfirm(window.title))) {
+      return
+    }
+
+    const taskIds = todos
+      .filter((todo) => (todo.windowId ?? DEFAULT_TASK_WINDOW_ID) === id)
+      .map((todo) => todo.id)
+
+    if (taskIds.length) {
+      deleteTasks(taskIds)
+    }
+
+    setTaskWindows((current) =>
+      normalizeTaskWindows(current).filter((item) => item.id !== id),
+    )
+    setTaskWindowLayouts((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+  }
+
+  const nextManualRank = (windowId = DEFAULT_TASK_WINDOW_ID, fallback = 0) => {
     const ranks = todos
-      .filter((todo) => !todo.completed)
+      .filter(
+        (todo) =>
+          !todo.completed &&
+          (todo.windowId ?? DEFAULT_TASK_WINDOW_ID) === windowId,
+      )
       .map((todo) => todo.rank)
 
-    return ranks.length ? Math.min(...ranks) - 1 : Date.now()
+    return ranks.length ? Math.min(...ranks) - 1 : fallback
   }
 
   const addTask = (
+    windowId: string,
     text: string,
     requiredPomodoros: number,
     priority: TodoPriority,
     difficulty: TodoDifficulty,
   ) => {
-    const now = Date.now()
+    const now = new Date().getTime()
     const normalizedPriority = normalizePriority(priority)
     const normalizedDifficulty = normalizeDifficulty(difficulty)
+    const taskWindowId = taskWindows.some((window) => window.id === windowId)
+      ? windowId
+      : DEFAULT_TASK_WINDOW_ID
+    const newTodo: TodoItem = {
+      id: `todo-${now}`,
+      windowId: taskWindowId,
+      text,
+      priority: normalizedPriority,
+      difficulty: normalizedDifficulty,
+      rank: nextManualRank(taskWindowId, now),
+      completed: false,
+      active: !todos.some((todo) => todo.active && !todo.completed),
+      requiredPomodoros: clampPomodoros(requiredPomodoros),
+      completedPomodoros: 0,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      repeatIndex: 0,
+    }
+    const memory = createTaskPomodoroMemory(newTodo, timerSettings)
 
-    commitTodos([
-      {
-        id: `todo-${Date.now()}`,
-        text,
-        priority: normalizedPriority,
-        difficulty: normalizedDifficulty,
-        rank: nextManualRank(),
-        completed: false,
-        active: !todos.some((todo) => todo.active && !todo.completed),
-        requiredPomodoros: clampPomodoros(requiredPomodoros),
-        completedPomodoros: 0,
-        createdAt: now,
-        updatedAt: now,
-        completedAt: null,
-        repeatIndex: 0,
-      },
-      ...todos,
-    ])
+    setTaskPomodoroMemory((current) => ({
+      ...current,
+      [newTodo.id]: memory,
+    }))
+    commitTodos([newTodo, ...todos])
+
+    if (newTodo.active) {
+      setPomodoroRun((current) => ({
+        ...current,
+        targetPomodoros: memory.targetPomodoros,
+        completedInTarget: 0,
+        currentRun: 0,
+      }))
+      setTimerMode('focus')
+      setTimerRemaining(memory.remaining)
+      setTimerRunning(false)
+    }
   }
 
   const updateTask = (
@@ -934,7 +1353,19 @@ function App() {
       return
     }
 
-    const ordered = filterAndSortTodos(todos, 'active', '', 'manual')
+    const sourceTodo = todos.find((todo) => todo.id === sourceId)
+
+    if (!sourceTodo) {
+      return
+    }
+
+    const sourceWindowId = sourceTodo.windowId ?? DEFAULT_TASK_WINDOW_ID
+    const ordered = filterAndSortTodos(
+      todos.filter((todo) => (todo.windowId ?? DEFAULT_TASK_WINDOW_ID) === sourceWindowId),
+      'active',
+      '',
+      'manual',
+    )
     const sourceIndex = ordered.findIndex((todo) => todo.id === sourceId)
     const targetIndex = ordered.findIndex((todo) => todo.id === targetId)
 
@@ -949,7 +1380,7 @@ function App() {
     const rankById = new Map(
       nextOrdered.map((todo, index) => [todo.id, index + 1]),
     )
-    const now = Date.now()
+    const now = new Date().getTime()
 
     commitTodos(
       todos.map((todo) => {
@@ -985,26 +1416,43 @@ function App() {
           .map((todo) => todo.repeatIndex),
       ) + 1
     const now = Date.now()
+    const taskWindowId = task.windowId ?? DEFAULT_TASK_WINDOW_ID
+    const newTodo: TodoItem = {
+      id: `todo-${now}-${repeatIndex}`,
+      windowId: taskWindowId,
+      text: task.text,
+      priority: task.priority,
+      difficulty: task.difficulty,
+      rank: nextManualRank(taskWindowId, now),
+      completed: false,
+      active: !todos.some((todo) => todo.active && !todo.completed),
+      requiredPomodoros: task.requiredPomodoros,
+      completedPomodoros: 0,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      repeatOf: rootId,
+      repeatIndex,
+    }
+    const memory = createTaskPomodoroMemory(newTodo, timerSettings)
 
-    commitTodos([
-      {
-        id: `todo-${now}-${repeatIndex}`,
-        text: task.text,
-        priority: task.priority,
-        difficulty: task.difficulty,
-        rank: nextManualRank(),
-        completed: false,
-        active: !todos.some((todo) => todo.active && !todo.completed),
-        requiredPomodoros: task.requiredPomodoros,
-        completedPomodoros: 0,
-        createdAt: now,
-        updatedAt: now,
-        completedAt: null,
-        repeatOf: rootId,
-        repeatIndex,
-      },
-      ...todos,
-    ])
+    setTaskPomodoroMemory((current) => ({
+      ...current,
+      [newTodo.id]: memory,
+    }))
+    commitTodos([newTodo, ...todos])
+
+    if (newTodo.active) {
+      setPomodoroRun((current) => ({
+        ...current,
+        targetPomodoros: memory.targetPomodoros,
+        completedInTarget: 0,
+        currentRun: 0,
+      }))
+      setTimerMode('focus')
+      setTimerRemaining(memory.remaining)
+      setTimerRunning(false)
+    }
   }
 
   const activateTask = useCallback((taskId: string, start = false) => {
@@ -1027,11 +1475,11 @@ function App() {
       }))
     }
 
-    const memory = syncTaskPomodoroMemory(
-      task,
-      timerSettings,
-      taskPomodoroMemory[taskId],
-    )
+    const storedMemory = taskPomodoroMemory[taskId]
+    const memory =
+      !storedMemory && task.completedPomodoros === 0
+        ? createTaskPomodoroMemory(task, timerSettings)
+        : syncTaskPomodoroMemory(task, timerSettings, storedMemory)
 
     commitTodos(
       todos.map((todo) => ({
@@ -1283,24 +1731,47 @@ function App() {
     )
   }
 
-  const deleteTask = (taskId: string) => {
-    const remaining = todos.filter((todo) => todo.id !== taskId)
+  const deleteTasks = (taskIds: string[]) => {
+    const ids = new Set(taskIds)
+
+    if (!ids.size) {
+      return
+    }
+
+    const remaining = todos.filter((todo) => !ids.has(todo.id))
     const activeExists = remaining.some((todo) => todo.active && !todo.completed)
 
     setTaskPomodoroMemory((current) => {
       const next = { ...current }
-      delete next[taskId]
+      ids.forEach((id) => {
+        delete next[id]
+      })
       return next
     })
 
     commitTodos(
       activeExists || remaining.length === 0
         ? remaining
-        : filterAndSortTodos(remaining, 'active', '', 'manual').map((todo, index) => ({
-            ...todo,
-            active: index === 0 && !todo.completed,
-          })),
+        : (() => {
+            const nextActiveId = filterAndSortTodos(
+              remaining,
+              'active',
+              '',
+              'manual',
+            )[0]?.id
+
+            return nextActiveId
+              ? remaining.map((todo) => ({
+                  ...todo,
+                  active: todo.id === nextActiveId && !todo.completed,
+                }))
+              : remaining
+          })(),
     )
+  }
+
+  const deleteTask = (taskId: string) => {
+    deleteTasks([taskId])
   }
 
   const completeFocusSession = useCallback(() => {
@@ -1321,6 +1792,38 @@ function App() {
       }))
     }
   }, [activeTask, recordActivity, setPomodoroRun, triggerTaskUnlock, updateTaskPomodoro])
+
+  const renderTaskWindow = (taskWindow: TaskWindow) => {
+    const windowTodos = todos.filter(
+      (todo) =>
+        (todo.windowId ?? DEFAULT_TASK_WINDOW_ID) === taskWindow.id,
+    )
+
+    return (
+      <TodoWidget
+        copy={copy.todo}
+        windowTitle={taskWindow.title}
+        canDeleteWindow={taskWindow.deletable}
+        todos={windowTodos}
+        activeTaskId={activeTask?.id}
+        isTimerRunning={timerRunning}
+        onRenameWindow={(title) => renameTaskWindow(taskWindow.id, title)}
+        onDeleteWindow={() => deleteTaskWindow(taskWindow.id)}
+        onAddTask={(text, requiredPomodoros, priority, difficulty) =>
+          addTask(taskWindow.id, text, requiredPomodoros, priority, difficulty)
+        }
+        onUpdateTask={updateTask}
+        onToggleTask={toggleTask}
+        onDeleteTask={deleteTask}
+        onDeleteTasks={deleteTasks}
+        onReorderTask={reorderTask}
+        onRepeatTask={repeatTask}
+        onSetActive={setTaskActive}
+        onStartTaskTimer={startTaskTimer}
+        onPauseTaskTimer={pauseTaskTimer}
+      />
+    )
+  }
 
   const renderWidget = (id: WidgetId) => {
     switch (id) {
@@ -1344,22 +1847,9 @@ function App() {
           />
         )
       case 'todo':
-        return (
-          <TodoWidget
-            copy={copy.todo}
-            todos={todos}
-            activeTaskId={activeTask?.id}
-            isTimerRunning={timerRunning}
-            onAddTask={addTask}
-            onUpdateTask={updateTask}
-            onToggleTask={toggleTask}
-            onDeleteTask={deleteTask}
-            onReorderTask={reorderTask}
-            onRepeatTask={repeatTask}
-            onSetActive={setTaskActive}
-            onStartTaskTimer={startTaskTimer}
-            onPauseTaskTimer={pauseTaskTimer}
-          />
+        return renderTaskWindow(
+          displayedTaskWindows.find((window) => window.id === DEFAULT_TASK_WINDOW_ID) ??
+            displayedTaskWindows[0],
         )
       case 'youtube':
         return <YoutubeWidget copy={copy.youtube} />
@@ -1393,6 +1883,10 @@ function App() {
         streak={streak}
         streakIgniteKey={streakIgniteKey}
         streakUnlockCue={streakUnlockCue}
+        flameEvolution={flameEvolution}
+        flameEvolutionCue={flameEvolutionCue}
+        onFlameEffectChange={updateFlameQuestEffect}
+        onClaimFlameEvolution={claimFlameEvolution}
         run={run}
         starBurstKey={run.lastStarAt}
         bestRunBurstKey={bestRunBurstKey}
@@ -1409,11 +1903,15 @@ function App() {
       />
       <SettingsPanel
         copy={copy.settings}
+        streakCopy={copy.streak}
         isOpen={settingsOpen}
         language={language}
         widgetLabels={widgetLabels}
         layouts={layouts}
+        taskWindows={displayedTaskWindows}
+        taskWindowLayouts={taskWindowLayouts}
         streak={streak}
+        flameEvolution={flameEvolution}
         timerSettings={timerSettings}
         memoryStatus={memoryStatus}
         memoryNotice={memoryNotice}
@@ -1423,8 +1921,11 @@ function App() {
         onLanguageChange={setLanguageState}
         onResetLayout={resetLayout}
         onToggleWidget={toggleWidget}
+        onToggleTaskWindow={toggleTaskWindow}
         onDailyGoalChange={updateDailyGoal}
         onAddStreakDay={addTemporaryStreakDay}
+        onRevealFlameHint={revealFlameHint}
+        onPreviewFlame={previewFlame}
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
         onParticlesEnabledChange={setParticlesEnabled}
@@ -1433,13 +1934,19 @@ function App() {
       />
       <Dock
         labels={widgetLabels}
+        taskWindows={displayedTaskWindows}
         label={copy.dock.label}
         layouts={layouts}
+        taskWindowLayouts={taskWindowLayouts}
+        addTaskWindowLabel={copy.todo.addWindow}
         onToggle={toggleWidget}
         onFocus={focusWidget}
+        onToggleTaskWindow={toggleTaskWindow}
+        onFocusTaskWindow={focusTaskWindow}
+        onAddTaskWindow={addTaskWindow}
       />
       <main className="workspace" aria-label={copy.app.workspace}>
-        {WIDGET_ORDER.map((id) => (
+        {STATIC_WIDGET_ORDER.map((id) => (
           <WidgetFrame
             key={id}
             title={widgetLabels[id]}
@@ -1451,6 +1958,20 @@ function App() {
             onFocus={() => focusWidget(id)}
           >
             {renderWidget(id)}
+          </WidgetFrame>
+        ))}
+        {displayedTaskWindows.map((taskWindow) => (
+          <WidgetFrame
+            key={taskWindow.id}
+            title={taskWindow.title}
+            copy={copy.widgetFrame}
+            icon={widgetIcons.todo}
+            layout={taskWindowLayouts[taskWindow.id]}
+            onLayoutChange={updateTaskWindowLayout}
+            onClose={() => hideTaskWindow(taskWindow.id)}
+            onFocus={() => focusTaskWindow(taskWindow.id)}
+          >
+            {renderTaskWindow(taskWindow)}
           </WidgetFrame>
         ))}
       </main>

@@ -4,6 +4,9 @@ import type {
   AuthUserProfile,
   CloudConflictState,
   CloudSyncStatus,
+  FlameEvolutionState,
+  FlameEvolutionUnlockCue,
+  FlameQuestEffect,
   PomodoroRunState,
   StreakState,
   StreakUnlockCue,
@@ -18,6 +21,10 @@ type TopBarProps = {
   streak: StreakState
   streakIgniteKey: number
   streakUnlockCue: StreakUnlockCue | null
+  flameEvolution: FlameEvolutionState
+  flameEvolutionCue: FlameEvolutionUnlockCue | null
+  onFlameEffectChange: (effect: FlameQuestEffect | null) => void
+  onClaimFlameEvolution: (cue: FlameEvolutionUnlockCue) => void
   run: PomodoroRunState
   starBurstKey: number
   bestRunBurstKey: number
@@ -38,6 +45,10 @@ export function TopBar({
   streak,
   streakIgniteKey,
   streakUnlockCue,
+  flameEvolution,
+  flameEvolutionCue,
+  onFlameEffectChange,
+  onClaimFlameEvolution,
   run,
   starBurstKey,
   bestRunBurstKey,
@@ -84,6 +95,10 @@ export function TopBar({
             copy={copy.streak}
             igniteKey={streakIgniteKey}
             unlockCue={streakUnlockCue}
+            evolution={flameEvolution}
+            evolutionCue={flameEvolutionCue}
+            onEffectChange={onFlameEffectChange}
+            onClaimEvolution={onClaimFlameEvolution}
           />
           <BestRunBadge
             run={run}

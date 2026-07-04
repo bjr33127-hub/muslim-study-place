@@ -655,7 +655,7 @@ function dateKeyForOffset(days = 0) {
 }
 
 async function addTask(page, text, priority, difficulty = 'normal') {
-  const todoForm = page.locator('.todo-form')
+  const todoForm = page.locator('.todo-form').first()
 
   await todoForm.locator('input[aria-label="Add task"]').fill(text)
   await todoForm.locator('.todo-priority-select select').selectOption(priority)
@@ -673,14 +673,20 @@ async function assertFirstOpenTask(page, expectedText, message) {
   assert(firstTodoText && firstTodoText.includes(expectedText), message)
 }
 
-async function assertFlameStage(page, today, current, expectedStage) {
+async function assertFlameStage(
+  page,
+  today,
+  current,
+  expectedStage,
+  best = current,
+) {
   await page.evaluate(
-    ({ current, today }) => {
+    ({ best, current, today }) => {
       localStorage.setItem(
         'muslim-study-place:streak',
         JSON.stringify({
           current,
-          best: Math.max(current, 1),
+          best: Math.max(best, current, 1),
           lastActiveDate: today,
           todayCount: 1,
           dailyGoal: 1,
@@ -696,8 +702,19 @@ async function assertFlameStage(page, today, current, expectedStage) {
           },
         }),
       )
+      localStorage.setItem(
+        'muslim-study-place:flameEvolution',
+        JSON.stringify({
+          stages: {},
+          quests: {},
+          selectedEffect: null,
+          seenUnlocks: [],
+          pendingUnlocks: [],
+          revealedHints: {},
+        }),
+      )
     },
-    { current, today },
+    { best, current, today },
   )
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.streak-flame')
@@ -705,6 +722,40 @@ async function assertFlameStage(page, today, current, expectedStage) {
   const stage = await page.locator('.streak-flame').getAttribute('data-flame-stage')
 
   assert(stage === expectedStage, `Expected flame stage ${expectedStage} for streak ${current}, got ${stage}`)
+}
+
+function perfectWeekHistory(weeks = 4) {
+  const history = {}
+  const now = new Date()
+  const mondayOffset = (now.getDay() + 6) % 7
+  const currentMonday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - mondayOffset,
+  )
+
+  for (let week = 1; week <= weeks; week += 1) {
+    for (let day = 0; day < 7; day += 1) {
+      const date = new Date(currentMonday)
+      date.setDate(date.getDate() - week * 7 + day)
+      const key = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+      ].join('-')
+
+      history[key] = {
+        date: key,
+        count: day === 0 && week === 1 ? 12 : 2,
+        goal: 2,
+        checkedIn: true,
+        completed: true,
+        source: 'activity',
+      }
+    }
+  }
+
+  return history
 }
 
 function installSupabaseMock(initialAppState = null) {
@@ -945,6 +996,15 @@ async function runCloudSyncQa(browser) {
         },
       ]),
     )
+    localStorage.setItem(
+      'muslim-study-place:flameEvolution',
+      JSON.stringify({
+        stages: { solar: Date.now() },
+        quests: { 'perfect-week': Date.now() },
+        selectedEffect: 'seven-lights',
+        seenUnlocks: ['stage:solar', 'quest:perfect-week'],
+      }),
+    )
   })
   const emptyCloudPage = await emptyCloudContext.newPage()
   await emptyCloudPage.goto(baseUrl, { waitUntil: 'domcontentloaded' })
@@ -962,6 +1022,8 @@ async function runCloudSyncQa(browser) {
       return (
         state.profiles.length >= 1 &&
         todos.some((todo) => todo.text === 'Cloud local seed') &&
+        state.appState?.snapshot?.values?.flameEvolution?.selectedEffect ===
+          'seven-lights' &&
         state.rpcCalls.some((call) => call.name === 'save_app_state') &&
         state.rpcCalls.some((call) => call.name === 'record_daily_check_in') &&
         Boolean(localStorage.getItem('muslim-study-place:cloud:lastSnapshot'))
@@ -1161,6 +1223,8 @@ async function runCloudSyncQa(browser) {
   })
 
   await emptyCloudPage.clock.install()
+  await emptyCloudPage.clock.runFor(1_000)
+  await emptyCloudPage.waitForFunction(() => !window.__mspSupabaseState?.saveInFlight)
   const checkpointStartRevision = await emptyCloudPage.evaluate(
     () => window.__mspSupabaseState.appState?.revision,
   )
@@ -1188,12 +1252,20 @@ async function runCloudSyncQa(browser) {
     'Timer checkpoints should stay visually silent',
   )
   await emptyCloudPage.clock.runFor(1_100)
+  await emptyCloudPage.waitForFunction(
+    (revision) => window.__mspSupabaseState.appState?.revision > revision,
+    checkpointStartRevision,
+  )
   assert(
     await emptyCloudPage.evaluate(
-      (revision) => window.__mspSupabaseState.appState?.revision === revision + 1,
+      (revision) =>
+        window.__mspSupabaseState.appState?.revision === revision + 1 &&
+        window.__mspSupabaseState.appState?.snapshot?.values?.[
+          'timer:remaining'
+        ] === 1499,
       checkpointStartRevision,
     ),
-    'High-frequency timer changes should create one cloud checkpoint after 30 seconds',
+    'High-frequency timer changes should create one current cloud checkpoint after 30 seconds',
   )
 
   const immediateStartRevision = await emptyCloudPage.evaluate(
@@ -1475,7 +1547,7 @@ async function main() {
   assert(initial.title === 'Muslim Study Place', 'Document title mismatch')
   assert(initial.lang === 'fr', 'French should be the default interface language')
   assert(initial.visibleWidgets === 4, 'Expected four widgets on the dashboard')
-  assert(initial.dockButtons === 4, 'Expected four dock buttons')
+  assert(initial.dockButtons === 5, 'Expected four widget dock buttons plus the task-window add button')
   assert(initial.noteFrames === 0, 'Notes widget should not render')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
   assert(initial.privacyChipCount === 0, 'Local privacy chip should not render')
@@ -1524,6 +1596,19 @@ async function main() {
   assert(
     reducedUnlockAnimation === 'none',
     'Reduced motion should disable the streak unlock badge animation',
+  )
+  const reducedEvolutionAnimation = await page.evaluate(() => {
+    const reveal = document.createElement('div')
+    reveal.className = 'flame-evolution-reveal stage-apogee'
+    document.body.appendChild(reveal)
+    const animationName = getComputedStyle(reveal).animationName
+    reveal.remove()
+
+    return animationName
+  })
+  assert(
+    reducedEvolutionAnimation === 'none',
+    'Reduced motion should disable the secret flame reveal animation',
   )
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   assert(initial.memoryStore, 'IndexedDB should be available for durable memory')
@@ -1730,6 +1815,46 @@ async function main() {
   await page.waitForTimeout(900)
 
   await addTask(page, 'Alpha manual', 'low', 'easy')
+  const freshTaskMemory = await page.evaluate(() => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+    const memory = JSON.parse(
+      localStorage.getItem('muslim-study-place:taskPomodoroMemory') || '{}',
+    )
+    const timerSettings = JSON.parse(
+      localStorage.getItem('muslim-study-place:timerSettings') || '{}',
+    )
+    const run = JSON.parse(localStorage.getItem('muslim-study-place:pomodoroRun') || '{}')
+    const timerRemaining = JSON.parse(
+      localStorage.getItem('muslim-study-place:timer:remaining') || '0',
+    )
+    const task = todos.find((todo) => todo.text === 'Alpha manual')
+    const taskMemory = task ? memory[task.id] : null
+    const expectedFocus = (timerSettings.focusMinutes || 25) * 60
+
+    return {
+      active: task?.active,
+      windowId: task?.windowId,
+      expectedFocus,
+      taskMemory,
+      timerRemaining,
+      run,
+    }
+  })
+  assert(freshTaskMemory.active === true, 'First fresh task should become active')
+  assert(freshTaskMemory.windowId === 'todo', 'Fresh task should belong to the default task window')
+  assert(
+    freshTaskMemory.taskMemory?.mode === 'focus' &&
+      freshTaskMemory.taskMemory?.remaining === freshTaskMemory.expectedFocus &&
+      freshTaskMemory.taskMemory?.completedInTarget === 0 &&
+      freshTaskMemory.taskMemory?.currentRun === 0,
+    'Fresh task should initialize its Pomodoro memory at focus time and zero progress',
+  )
+  assert(
+    freshTaskMemory.timerRemaining === freshTaskMemory.expectedFocus &&
+      freshTaskMemory.run.completedInTarget === 0 &&
+      freshTaskMemory.run.currentRun === 0,
+    'Active fresh task should reset the visible Pomodoro to focus time and zero progress',
+  )
   await addTask(page, 'Beta manual', 'high', 'intense')
   await addTask(page, 'Gamma manual', 'medium', 'hard')
   await waitForDurableKey(page, 'todos', 'Gamma manual')
@@ -1759,6 +1884,46 @@ async function main() {
       difficultyOptionStyles.color === 'rgb(248, 239, 210)',
     'Difficulty select options should use a readable dark popup style',
   )
+
+  await page.getByLabel('Add task window').click()
+  const secondTaskWindow = page.locator('.widget-frame').filter({ hasText: 'Tasks 2' }).first()
+  assert(await secondTaskWindow.isVisible(), 'New task window should open immediately')
+  await secondTaskWindow.getByLabel('Rename Tasks 2').fill('Deep Work')
+  await secondTaskWindow.getByLabel('Rename Tasks 2').press('Enter')
+  await page.waitForTimeout(200)
+  const deepWorkWindow = page.locator('.widget-frame').filter({ hasText: 'Deep Work' }).first()
+  assert(await deepWorkWindow.isVisible(), 'Renamed task window should update its visible title')
+  await deepWorkWindow.locator('.todo-form input[aria-label="Add task"]').fill('Isolated task')
+  await deepWorkWindow.locator('.todo-priority-select select').selectOption('medium')
+  await deepWorkWindow.locator('.todo-difficulty-select select').selectOption('normal')
+  await deepWorkWindow.getByRole('button', { name: 'Add task' }).click()
+  await page.waitForFunction(() => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+    const windows = JSON.parse(localStorage.getItem('muslim-study-place:taskWindows') || '[]')
+    const deepWindow = windows.find((item) => item.title === 'Deep Work')
+    const task = todos.find((item) => item.text === 'Isolated task')
+
+    return deepWindow && task?.windowId === deepWindow.id
+  })
+  assert(
+    await page
+      .locator('.widget-frame')
+      .filter({ hasText: 'Todo' })
+      .filter({ hasText: 'Isolated task' })
+      .count() === 0,
+    'Task created in a new window should stay isolated from the default task window',
+  )
+  page.once('dialog', (dialog) => dialog.accept())
+  await deepWorkWindow.getByLabel('Delete Deep Work window').click()
+  await page.waitForFunction(() => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+    const windows = JSON.parse(localStorage.getItem('muslim-study-place:taskWindows') || '[]')
+
+    return (
+      !windows.some((item) => item.title === 'Deep Work') &&
+      !todos.some((item) => item.text === 'Isolated task')
+    )
+  })
 
   const sortOptions = await page.getByLabel('Sort tasks').locator('option').evaluateAll((options) =>
     options.map((option) => option.value),
@@ -1853,6 +2018,29 @@ async function main() {
   await alphaGroups.first().getByLabel('Show runs').click()
   assert(await alphaGroups.first().getByText('Run 1').isVisible(), 'Expanded completed group is missing redo history')
 
+  await page.getByRole('button', { name: 'To do' }).click()
+  await addTask(page, 'Delete run QA', 'medium', 'normal')
+  const deleteRunRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Delete run QA' }).first()
+  await deleteRunRow.getByLabel('Toggle Delete run QA').click()
+  await page.getByRole('button', { name: 'Done' }).click()
+  const deleteRunGroup = page.locator('.todo-group-row').filter({ hasText: 'Delete run QA' }).first()
+  await deleteRunGroup.getByLabel('Show runs').click()
+  await deleteRunGroup.getByLabel('Delete this Original run').click()
+  await page.waitForFunction(
+    () => ![...document.querySelectorAll('.todo-group-row')].some((row) => row.textContent?.includes('Delete run QA')),
+  )
+
+  await page.getByRole('button', { name: 'To do' }).click()
+  await addTask(page, 'Delete group QA', 'medium', 'normal')
+  const deleteGroupRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Delete group QA' }).first()
+  await deleteGroupRow.getByLabel('Toggle Delete group QA').click()
+  await page.getByRole('button', { name: 'Done' }).click()
+  const deleteGroup = page.locator('.todo-group-row').filter({ hasText: 'Delete group QA' }).first()
+  await deleteGroup.getByLabel('Delete all completed Delete group QA tasks').click()
+  await page.waitForFunction(
+    () => ![...document.querySelectorAll('.todo-group-row')].some((row) => row.textContent?.includes('Delete group QA')),
+  )
+
   await waitForDurableKey(page, 'todos', 'Alpha manual')
   await page.evaluate(() => localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -1868,6 +2056,10 @@ async function main() {
         'bg-49-lac-rose',
     ),
     'Selected background did not restore from durable memory',
+  )
+  await page.waitForFunction(
+    () => localStorage.getItem('muslim-study-place:todos')?.includes('Alpha manual'),
+    { timeout: 10000 },
   )
   await page.getByRole('button', { name: 'Done' }).click()
   assert(await page.getByText('Alpha manual').first().isVisible(), 'Task did not restore from durable memory')
@@ -2387,6 +2579,383 @@ async function main() {
   await assertFlameStage(page, today, 7, 'verdant')
   await assertFlameStage(page, today, 30, 'azure')
   await assertFlameStage(page, today, 100, 'ultimate')
+  await assertFlameStage(page, today, 1, 'solar', 120)
+  await assertFlameStage(page, today, 1, 'eclipse', 150)
+  await assertFlameStage(page, today, 1, 'nebula', 200)
+  await assertFlameStage(page, today, 1, 'apogee', 300)
+
+  const assertCompactFlameAccessory = async (effect, quest, check) => {
+    await page.evaluate(
+      ({ effect, quest }) => {
+        localStorage.setItem(
+          'muslim-study-place:flameEvolution',
+          JSON.stringify({
+            stages: {},
+            quests: { [quest]: Date.now() },
+            selectedEffect: effect,
+            seenUnlocks: [],
+            pendingUnlocks: [],
+            revealedHints: {},
+          }),
+        )
+      },
+      { effect, quest },
+    )
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(600)
+
+    const metrics = await page.evaluate(() => {
+      const orb = document.querySelector('.streak-flame .flame-orb')?.getBoundingClientRect()
+      const flame = document.querySelector('.streak-flame .duo-flame')?.getBoundingClientRect()
+      const object = document
+        .querySelector('.streak-flame .flame-quest-object')
+        ?.getBoundingClientRect()
+      const core = document.querySelector('.streak-flame .duo-flame-core')
+      const coreStyle = core ? getComputedStyle(core) : null
+
+      return {
+        orb: orb ? { top: orb.top, right: orb.right, bottom: orb.bottom, left: orb.left } : null,
+        flame: flame ? { top: flame.top, right: flame.right, bottom: flame.bottom, left: flame.left } : null,
+        object: object
+          ? { top: object.top, right: object.right, bottom: object.bottom, left: object.left }
+          : null,
+        coreOpacity: coreStyle ? Number.parseFloat(coreStyle.opacity) : 0,
+      }
+    })
+
+    check(metrics)
+  }
+
+  await assertCompactFlameAccessory('seven-lights', 'perfect-week', (metrics) => {
+    assert(metrics.orb && metrics.object, 'Crown accessory metrics missing')
+    assert(
+      metrics.object.bottom <= metrics.orb.bottom - 9,
+      'Crown accessory should sit above the compact flame instead of covering it',
+    )
+  })
+  await assertCompactFlameAccessory('crystal-core', 'deep-task', (metrics) => {
+    assert(metrics.flame && metrics.object, 'Crystal accessory metrics missing')
+    assert(metrics.coreOpacity >= 0.8, 'Crystal accessory should not dim the base flame core')
+    assert(
+      metrics.object.left >= metrics.flame.left + (metrics.flame.right - metrics.flame.left) * 0.45,
+      'Crystal accessory should sit beside the compact flame',
+    )
+  })
+  await assertCompactFlameAccessory('runic-sparks', 'twenty-five-tasks', (metrics) => {
+    assert(metrics.flame && metrics.object, 'Runic accessory metrics missing')
+    assert(metrics.coreOpacity >= 0.8, 'Runic accessory should not hide the base flame core')
+    assert(
+      metrics.object.right <= metrics.flame.left + (metrics.flame.right - metrics.flame.left) * 0.62,
+      'Runic accessory should sit beside the compact flame',
+    )
+  })
+
+  await page.evaluate(
+    ({ history, today }) => {
+      const completedTodos = Array.from({ length: 25 }, (_, index) => ({
+        id: `qa-flame-secret-${index}`,
+        text: `Flame secret task ${index + 1}`,
+        priority: 'medium',
+        difficulty: 'normal',
+        rank: index + 1,
+        completed: true,
+        active: false,
+        requiredPomodoros: index === 0 ? 6 : 1,
+        completedPomodoros: index === 0 ? 6 : 1,
+        createdAt: Date.now() - index,
+        updatedAt: Date.now() - index,
+        completedAt: Date.now() - index,
+        repeatIndex: 0,
+      }))
+
+      localStorage.setItem(
+        'muslim-study-place:streak',
+        JSON.stringify({
+          current: 1,
+          best: 300,
+          lastActiveDate: today,
+          todayCount: 1,
+          dailyGoal: 2,
+          history,
+        }),
+      )
+      localStorage.setItem(
+        'muslim-study-place:pomodoroRun',
+        JSON.stringify({
+          targetPomodoros: 10,
+          completedInTarget: 10,
+          currentRun: 10,
+          bestRun: 10,
+          totalStars: 100,
+          lastStarAt: Date.now(),
+          autoCycle: true,
+          starHistory: {},
+        }),
+      )
+      localStorage.setItem(
+        'muslim-study-place:todos',
+        JSON.stringify(completedTodos),
+      )
+      localStorage.setItem(
+        'muslim-study-place:flameEvolution',
+        JSON.stringify({
+          stages: {},
+          quests: {},
+          selectedEffect: null,
+          seenUnlocks: [],
+        }),
+      )
+    },
+    { history: perfectWeekHistory(4), today },
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => {
+    const evolution = JSON.parse(
+      localStorage.getItem('muslim-study-place:flameEvolution') || '{}',
+    )
+
+    return (
+      Object.keys(evolution.stages || {}).length === 4 &&
+      Object.keys(evolution.quests || {}).length === 7 &&
+      evolution.selectedEffect === 'runic-sparks'
+    )
+  })
+  assert(
+    await page.locator('.flame-evolution-reveal').count() === 1,
+    'Retroactive flame unlocks should be grouped into one reveal',
+  )
+  assert(
+    await page.locator('.streak-flame').getAttribute('data-flame-stage') ===
+      'apogee',
+    'The highest unlocked ascension should remain active from the best streak',
+  )
+  assert(
+    await page.locator('.streak-flame').getAttribute('data-flame-effect') ===
+      'runic-sparks',
+    'The newest mysterious quest effect should equip automatically',
+  )
+  await page.keyboard.press('Escape')
+  await page.mouse.click(8, 8)
+  await page.waitForTimeout(15100)
+  assert(
+    await page.locator('.flame-evolution-reveal').count() === 1,
+    'A secret flame reveal should wait indefinitely for the Claim action',
+  )
+  const pendingEvolution = await page.evaluate(() =>
+    JSON.parse(
+      localStorage.getItem('muslim-study-place:flameEvolution') || '{}',
+    ),
+  )
+  assert(
+    pendingEvolution.pendingUnlocks?.length === 11 &&
+      pendingEvolution.seenUnlocks?.length === 0,
+    'Discovered secrets should remain pending until they are claimed',
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(500)
+  assert(
+    await page.locator('.flame-evolution-reveal').count() === 1,
+    'An unclaimed flame reveal should return after reload',
+  )
+  await page.getByRole('button', { name: 'Claim' }).click()
+  await page.waitForSelector('.flame-evolution-reveal', { state: 'detached' })
+  const claimedEvolution = await page.evaluate(() =>
+    JSON.parse(
+      localStorage.getItem('muslim-study-place:flameEvolution') || '{}',
+    ),
+  )
+  assert(
+    claimedEvolution.pendingUnlocks?.length === 0 &&
+      claimedEvolution.seenUnlocks?.length === 11,
+    'Claim should move every grouped secret from pending to seen',
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(500)
+  assert(
+    await page.locator('.flame-evolution-reveal').count() === 0,
+    'Claimed flame evolution reveals should not replay after reload',
+  )
+  await page.locator('.streak-flame').click()
+  assert(
+    await page.locator('.flame-quest.is-unlocked').count() === 7 &&
+      await page.locator('.flame-quest.is-locked').count() === 0,
+    'All seven completed mysterious quests should be revealed in the streak panel',
+  )
+  const sevenLightsQuest = page
+    .locator('.flame-quest.is-unlocked')
+    .filter({ hasText: 'Crown of seven lights' })
+  assert(
+    await sevenLightsQuest.count() === 1,
+    'The seven lights reward should be available after a perfect week',
+  )
+  await sevenLightsQuest.click()
+  assert(
+    await page.locator('.streak-flame').getAttribute('data-flame-effect') ===
+      'seven-lights',
+    'Selecting an unlocked mysterious effect should update the flame',
+  )
+  await page.getByLabel('Close focus streak').click()
+  await page.getByLabel('Open settings').click()
+  await page.getByRole('button', { name: 'Book of Achievements' }).click()
+  assert(
+    await page.getByText('Reach a best streak of 300 days.').isVisible(),
+    'The achievement book should reveal exact ascension answers',
+  )
+  assert(
+    await page.locator('.codex-entry.is-unlocked').count() === 4,
+    'The Ascensions tab should show all four unlocked ascensions',
+  )
+  await page.getByRole('tab', { name: /Quests/ }).click()
+  assert(
+    await page.locator('.codex-entry.is-unlocked').count() === 7,
+    'The Quests tab should show all seven unlocked quests',
+  )
+  assert(
+    await page.getByText('Complete 25 tasks.').isVisible(),
+    'The achievement book should reveal exact quest answers',
+  )
+  await page.getByLabel('Close the book').click()
+  await page.getByLabel('Close settings').click()
+
+  await page.evaluate(({ today }) => {
+    localStorage.setItem(
+      'muslim-study-place:streak',
+      JSON.stringify({
+        current: 1,
+        best: 1,
+        lastActiveDate: today,
+        todayCount: 1,
+        dailyGoal: 1,
+        history: {},
+      }),
+    )
+    localStorage.setItem(
+      'muslim-study-place:pomodoroRun',
+      JSON.stringify({
+        targetPomodoros: 1,
+        completedInTarget: 0,
+        currentRun: 0,
+        bestRun: 0,
+        totalStars: 0,
+        lastStarAt: 0,
+        autoCycle: true,
+        starHistory: {},
+      }),
+    )
+    localStorage.setItem('muslim-study-place:todos', '[]')
+    localStorage.setItem(
+      'muslim-study-place:flameEvolution',
+      JSON.stringify({
+        stages: {},
+        quests: {},
+        selectedEffect: null,
+        seenUnlocks: [],
+        pendingUnlocks: [],
+        revealedHints: {},
+      }),
+    )
+  }, { today })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(500)
+  assert(
+    await page.locator('.streak-flame').getAttribute('data-flame-effect') ===
+      'none',
+    'A locked mysterious effect should never be restored as selected',
+  )
+  await page.getByLabel('Open settings').click()
+  await page.getByRole('button', { name: 'Book of Achievements' }).click()
+  await page.getByRole('tab', { name: /Quests/ }).click()
+  assert(
+    await page.getByText('Complete 25 tasks.').count() === 0,
+    'A locked quest must not expose its exact answer',
+  )
+  const firstLockedEntry = page.locator('.codex-entry.is-locked').first()
+  await firstLockedEntry.getByRole('button', { name: 'Break seal 1' }).click()
+  assert(
+    await firstLockedEntry.getByText('Seek one complete cycle.').isVisible(),
+    'The first clue seal should reveal the first clue',
+  )
+  await firstLockedEntry.getByRole('button', { name: 'Break seal 2' }).click()
+  assert(
+    await firstLockedEntry
+      .getByText('Reach your goal from Monday through Sunday.')
+      .isVisible(),
+    'The second clue seal should reveal the second clue',
+  )
+  const hintedEvolution = await page.evaluate(() =>
+    JSON.parse(
+      localStorage.getItem('muslim-study-place:flameEvolution') || '{}',
+    ),
+  )
+  assert(
+    hintedEvolution.revealedHints?.['quest:perfect-week'] === 2,
+    'Revealed clue seals should persist in flame evolution state',
+  )
+  await page.getByLabel('Close the book').click()
+  await page.getByLabel('Close settings').click()
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.getByLabel('Open settings').click()
+  await page.getByRole('button', { name: 'Book of Achievements' }).click()
+  await page.getByRole('tab', { name: /Quests/ }).click()
+  assert(
+    await page.getByText('Seek one complete cycle.').isVisible() &&
+      await page
+        .getByText('Reach your goal from Monday through Sunday.')
+        .isVisible(),
+    'Revealed clues should survive a reload',
+  )
+  await page.getByLabel('Close the book').click()
+
+  const workshopStateBefore = await page.evaluate(
+    () => localStorage.getItem('muslim-study-place:flameEvolution'),
+  )
+  const workshopPreviews = [
+    'Red',
+    'Green',
+    'Blue',
+    'Violet',
+    'Solar',
+    'Eclipse',
+    'Nebula',
+    'Apex',
+    'Crown of seven lights',
+    'Prismatic halo',
+    'Blazing comet',
+    'Golden constellation',
+    'Twin rings',
+    'Crystal core',
+    'Runes fulfilled',
+    'Ascension reveal',
+    'Quest reveal',
+    'Grouped reveal',
+  ]
+
+  for (const previewName of workshopPreviews) {
+    await page.getByRole('button', { name: 'Temporary Flame Workshop' }).click()
+    await page.getByRole('button', { name: previewName, exact: true }).click()
+    assert(
+      await page.locator('.flame-evolution-reveal.is-preview').count() === 1,
+      `Workshop preview missing for ${previewName}`,
+    )
+    await page.getByRole('button', { name: 'Claim' }).click()
+    await page.getByLabel('Open settings').click()
+  }
+
+  await page.getByRole('button', { name: 'Temporary Flame Workshop' }).click()
+  await page.getByRole('button', { name: 'Day unlocked', exact: true }).click()
+  await page.waitForSelector('.streak-unlock-card', { state: 'visible' })
+  assert(
+    await page.locator('.streak-unlock-card').count() === 1,
+    'The workshop should play the real Day unlocked animation',
+  )
+  await page.waitForSelector('.streak-unlock-card', { state: 'detached' })
+  const workshopStateAfter = await page.evaluate(
+    () => localStorage.getItem('muslim-study-place:flameEvolution'),
+  )
+  assert(
+    workshopStateAfter === workshopStateBefore,
+    'Flame workshop previews must not modify durable flame progress',
+  )
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })

@@ -2,11 +2,24 @@ import type { TaskWindow, WidgetLayout } from '../types/app'
 
 export const DEFAULT_TASK_WINDOW_ID = 'todo'
 export const DEFAULT_TASK_WINDOW_TITLE = 'Taches'
+export const DEFAULT_TASK_WINDOW_EMOJI = '✅'
+
+export const TASK_WINDOW_EMOJIS = [
+  '✅',
+  '📚',
+  '📝',
+  '🎯',
+  '🌙',
+  '⭐',
+  '🔥',
+  '📌',
+] as const
 
 export const DEFAULT_TASK_WINDOWS: TaskWindow[] = [
   {
     id: DEFAULT_TASK_WINDOW_ID,
     title: DEFAULT_TASK_WINDOW_TITLE,
+    emoji: DEFAULT_TASK_WINDOW_EMOJI,
     rank: 1,
     createdAt: 1,
     updatedAt: 1,
@@ -18,8 +31,23 @@ function cleanTitle(value: unknown, fallback: string) {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
 
+function cleanEmoji(value: unknown, fallback: string) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const trimmed = value.trim()
+  return (TASK_WINDOW_EMOJIS as readonly string[]).includes(trimmed)
+    ? trimmed
+    : fallback
+}
+
 function cleanNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+export function taskWindowEmojiForIndex(index: number) {
+  return TASK_WINDOW_EMOJIS[Math.max(0, index) % TASK_WINDOW_EMOJIS.length]
 }
 
 function normalizeTaskWindow(
@@ -39,6 +67,12 @@ function normalizeTaskWindow(
   return {
     id,
     title: cleanTitle(value.title, fallbackTitle),
+    emoji: cleanEmoji(
+      value.emoji,
+      id === DEFAULT_TASK_WINDOW_ID
+        ? DEFAULT_TASK_WINDOW_EMOJI
+        : taskWindowEmojiForIndex(index),
+    ),
     rank: cleanNumber(value.rank, index + 1),
     createdAt,
     updatedAt: cleanNumber(value.updatedAt, createdAt),
@@ -61,7 +95,12 @@ export function normalizeTaskWindows(value: unknown): TaskWindow[] {
 
   const windows = Array.from(byId.values()).map((window, index) =>
     window.id === DEFAULT_TASK_WINDOW_ID
-      ? { ...window, deletable: false, rank: Math.min(window.rank, 1) }
+      ? {
+          ...window,
+          deletable: false,
+          emoji: window.emoji || DEFAULT_TASK_WINDOW_EMOJI,
+          rank: Math.min(window.rank, 1),
+        }
       : { ...window, rank: Number.isFinite(window.rank) ? window.rank : index + 1 },
   )
 

@@ -3,6 +3,8 @@ export type WidgetId =
   | 'todo'
   | 'youtube'
   | 'backgrounds'
+  | 'revisionDashboard'
+  | 'friends'
 
 export type AppLanguage = 'fr' | 'en'
 
@@ -19,6 +21,7 @@ export type WidgetLayout = {
 export type TaskWindow = {
   id: string
   title: string
+  emoji?: string
   rank: number
   createdAt: number
   updatedAt: number
@@ -50,6 +53,7 @@ export type TodoDifficulty = 'easy' | 'normal' | 'hard' | 'intense'
 export type TodoItem = {
   id: string
   windowId?: string
+  revisionEventId?: string
   text: string
   priority: TodoPriority
   difficulty: TodoDifficulty
@@ -63,6 +67,88 @@ export type TodoItem = {
   completedAt: number | null
   repeatOf?: string
   repeatIndex: number
+}
+
+export type RevisionWeekday =
+  | 'mon'
+  | 'tue'
+  | 'wed'
+  | 'thu'
+  | 'fri'
+  | 'sat'
+  | 'sun'
+
+export type RevisionMethod = {
+  id: string
+  name: string
+  offsetDays: number[]
+  builtIn: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type RevisionCourse = {
+  id: string
+  title: string
+  initialDate: string
+  professor: string
+  part: string
+  notes: string
+  color: string
+  textColor: string
+  methodId: string | null
+  excludedWeekdays: RevisionWeekday[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type RevisionEventKind = 'initial' | 'review'
+export type RevisionEventStatus = 'pending' | 'active' | 'done' | 'skipped'
+
+export type RevisionEvent = {
+  id: string
+  courseId: string
+  scheduledDate: string
+  scheduledTime: string | null
+  kind: RevisionEventKind
+  reviewIndex: number
+  totalReviews: number
+  status: RevisionEventStatus
+  priority: TodoPriority
+  difficulty: TodoDifficulty
+  requiredPomodoros: number
+  completedPomodoros: number
+  linkedTodoId?: string
+  completedAt: number | null
+  timeSpentSeconds: number
+}
+
+export type RevisionSettings = {
+  selectedWeekStart: string | null
+  plannerView: 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay' | 'listWeek'
+  plannerDate: string | null
+}
+
+export type GoogleCalendarEventLink = {
+  revisionEventId: string
+  googleEventId: string
+  syncedAt: number
+}
+
+export type GoogleCalendarSyncSummary = {
+  created: number
+  updated: number
+  deleted: number
+  repaired: number
+  skipped: number
+}
+
+export type GoogleCalendarSyncState = {
+  enabled: boolean
+  lastSyncedAt: number | null
+  lastError: string | null
+  lastSummary: GoogleCalendarSyncSummary | null
+  eventMap: Record<string, GoogleCalendarEventLink>
 }
 
 export type TimerMode = 'focus' | 'shortBreak' | 'longBreak'
@@ -209,6 +295,80 @@ export type AuthUserProfile = {
   displayName: string
   avatarUrl: string
 }
+
+export type FriendInviteStatus = 'pending' | 'accepted' | 'declined' | 'cancelled'
+
+export type FriendProfile = {
+  userId: string
+  displayName: string
+  avatarUrl: string
+  friendCode: string
+  weekStars: number
+  currentStreak: number
+  weekRevisionsDone: number
+  weekRevisionDailyAverage: number
+  totalStars: number
+  bestStreak: number
+  bestRun: number
+  flameStages: SecretFlameStage[]
+  flameQuests: FlameQuestId[]
+  selectedFlameEffect: FlameQuestEffect | null
+  isSelf: boolean
+}
+
+export type FriendCodeLookupRelation =
+  | 'none'
+  | 'self'
+  | 'friend'
+  | 'pending-sent'
+  | 'pending-received'
+
+export type FriendCodeLookup = {
+  userId: string
+  displayName: string
+  avatarUrl: string
+  friendCode: string
+  relation: FriendCodeLookupRelation
+}
+
+export type FriendInvite = {
+  id: string
+  senderId: string
+  senderDisplayName: string
+  senderAvatarUrl: string
+  recipientId: string | null
+  recipientDisplayName: string
+  recipientAvatarUrl: string
+  status: FriendInviteStatus
+  createdAt: string
+  updatedAt: string
+  respondedAt: string | null
+}
+
+export type UserSocialStats = {
+  userId: string
+  weekStart: string
+  weekStars: number
+  currentStreak: number
+  weekRevisionsDone: number
+  weekRevisionDailyAverage: number
+  totalStars: number
+  bestStreak: number
+  bestRun: number
+  flameStages: SecretFlameStage[]
+  flameQuests: FlameQuestId[]
+  selectedFlameEffect: FlameQuestEffect | null
+  updatedAt: string | null
+}
+
+export type LeaderboardEntry = UserSocialStats & {
+  displayName: string
+  avatarUrl: string
+  isSelf: boolean
+  rank: number
+}
+
+export type SocialPageTab = 'leaderboard' | 'friends' | 'requests'
 
 export type CloudSnapshot = {
   app: 'muslim-study-place'

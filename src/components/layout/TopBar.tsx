@@ -1,4 +1,6 @@
 import { Settings } from 'lucide-react'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { AppCopy } from '../../lib/i18n'
 import type {
   AuthUserProfile,
@@ -16,6 +18,8 @@ import { BestRunBadge, TotalStarsBadge } from './PomodoroMetricBadges'
 import { QuranMiniPlayer } from './QuranMiniPlayer'
 import { StreakFlame } from './StreakFlame'
 
+type OpenMetricPanel = 'streak' | 'bestRun' | 'totalStars' | null
+
 type TopBarProps = {
   copy: AppCopy
   streak: StreakState
@@ -31,6 +35,7 @@ type TopBarProps = {
   cloudUser: AuthUserProfile | null
   cloudStatus: CloudSyncStatus
   cloudConflict: CloudConflictState | null
+  miniPomodoro?: ReactNode
   onOpenSettings: () => void
   onCloudSignIn: () => void
   onCloudSignOut: () => void
@@ -55,6 +60,7 @@ export function TopBar({
   cloudUser,
   cloudStatus,
   cloudConflict,
+  miniPomodoro,
   onOpenSettings,
   onCloudSignIn,
   onCloudSignOut,
@@ -63,6 +69,11 @@ export function TopBar({
   onUseLocalVersion,
   onExportLocalBackup,
 }: TopBarProps) {
+  const [openMetricPanel, setOpenMetricPanel] = useState<OpenMetricPanel>(null)
+  const toggleMetricPanel = (panel: Exclude<OpenMetricPanel, null>) => {
+    setOpenMetricPanel((current) => (current === panel ? null : panel))
+  }
+
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -88,7 +99,10 @@ export function TopBar({
         />
       </div>
       <div className="topbar-media">
-        <QuranMiniPlayer copy={copy.quran} />
+        <div className="topbar-player-cluster">
+          {miniPomodoro}
+          <QuranMiniPlayer copy={copy.quran} />
+        </div>
         <div className="topbar-actions">
           <StreakFlame
             streak={streak}
@@ -97,6 +111,9 @@ export function TopBar({
             unlockCue={streakUnlockCue}
             evolution={flameEvolution}
             evolutionCue={flameEvolutionCue}
+            isOpen={openMetricPanel === 'streak'}
+            onToggleOpen={() => toggleMetricPanel('streak')}
+            onClose={() => setOpenMetricPanel(null)}
             onEffectChange={onFlameEffectChange}
             onClaimEvolution={onClaimFlameEvolution}
           />
@@ -104,11 +121,17 @@ export function TopBar({
             run={run}
             copy={copy.topbar}
             burstKey={bestRunBurstKey}
+            isOpen={openMetricPanel === 'bestRun'}
+            onToggleOpen={() => toggleMetricPanel('bestRun')}
+            onClose={() => setOpenMetricPanel(null)}
           />
           <TotalStarsBadge
             run={run}
             copy={copy.topbar}
             showerKey={starBurstKey}
+            isOpen={openMetricPanel === 'totalStars'}
+            onToggleOpen={() => toggleMetricPanel('totalStars')}
+            onClose={() => setOpenMetricPanel(null)}
           />
         </div>
       </div>

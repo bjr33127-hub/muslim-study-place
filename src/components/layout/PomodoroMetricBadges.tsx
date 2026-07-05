@@ -10,12 +10,18 @@ type BestRunBadgeProps = {
   run: PomodoroRunState
   copy: MetricCopy
   burstKey: number
+  isOpen: boolean
+  onToggleOpen: () => void
+  onClose: () => void
 }
 
 type TotalStarsBadgeProps = {
   run: PomodoroRunState
   copy: MetricCopy
   showerKey: number
+  isOpen: boolean
+  onToggleOpen: () => void
+  onClose: () => void
 }
 
 function useTimedPulse(key: number, duration = 1500) {
@@ -73,8 +79,14 @@ function MetricWeekRow({
   )
 }
 
-export function BestRunBadge({ run, copy, burstKey }: BestRunBadgeProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export function BestRunBadge({
+  run,
+  copy,
+  burstKey,
+  isOpen,
+  onToggleOpen,
+  onClose,
+}: BestRunBadgeProps) {
   const isBursting = useTimedPulse(burstKey, 1300)
   const week = useMemo(() => getPomodoroWeekSummary(run), [run])
   const isLit = run.bestRun > 0
@@ -91,7 +103,7 @@ export function BestRunBadge({ run, copy, burstKey }: BestRunBadgeProps) {
         type="button"
         aria-label={copy.bestRunOpen}
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={onToggleOpen}
       >
         <span className="best-star-orb" aria-hidden="true">
           <span className="combo-ring" />
@@ -120,7 +132,7 @@ export function BestRunBadge({ run, copy, burstKey }: BestRunBadgeProps) {
               className="quiet-icon metric-close"
               type="button"
               aria-label={copy.closeBestRunPanel}
-              onClick={() => setIsOpen(false)}
+              onClick={onClose}
             >
               <X size={16} strokeWidth={2} />
             </button>
@@ -165,8 +177,14 @@ export function BestRunBadge({ run, copy, burstKey }: BestRunBadgeProps) {
   )
 }
 
-export function TotalStarsBadge({ run, copy, showerKey }: TotalStarsBadgeProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export function TotalStarsBadge({
+  run,
+  copy,
+  showerKey,
+  isOpen,
+  onToggleOpen,
+  onClose,
+}: TotalStarsBadgeProps) {
   const isShowering = useTimedPulse(showerKey, 1600)
   const week = useMemo(() => getPomodoroWeekSummary(run), [run])
   const isLit = run.totalStars > 0
@@ -182,7 +200,7 @@ export function TotalStarsBadge({ run, copy, showerKey }: TotalStarsBadgeProps) 
         type="button"
         aria-label={copy.totalStarsOpen}
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={onToggleOpen}
       >
         <span className="total-star-orb" aria-hidden="true">
           <span className="star-orbit orbit-one" />
@@ -213,7 +231,7 @@ export function TotalStarsBadge({ run, copy, showerKey }: TotalStarsBadgeProps) 
               className="quiet-icon metric-close"
               type="button"
               aria-label={copy.closeTotalStarsPanel}
-              onClick={() => setIsOpen(false)}
+              onClick={onClose}
             >
               <X size={16} strokeWidth={2} />
             </button>

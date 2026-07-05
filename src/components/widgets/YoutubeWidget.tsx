@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   ListVideo,
@@ -84,6 +85,7 @@ type YouTubePlayerStatus = {
 }
 
 type PlaylistOrder = 'asc' | 'desc'
+type WatchedVideosByPlaylist = Record<string, Record<string, boolean>>
 
 declare global {
   interface Window {
@@ -294,6 +296,8 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
     'youtube:playlistOrder',
     'asc',
   )
+  const [watchedVideos, setWatchedVideos] =
+    usePersistentState<WatchedVideosByPlaylist>('youtube:watchedVideos', {})
   const effectiveYoutubeUrl =
     youtubeUrl === legacyYoutubeUrl ? YOUTUBE_DEFAULT_URL : youtubeUrl
   const target = useMemo(
@@ -356,6 +360,31 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
     [orderedPlaylistVideos],
   )
   const isPlaylist = target.type === 'playlist'
+  const activePlaylistId = isPlaylist ? target.playlistId : ''
+  const watchedForPlaylist = useMemo(
+    () => (activePlaylistId ? watchedVideos[activePlaylistId] ?? {} : {}),
+    [activePlaylistId, watchedVideos],
+  )
+  const watchedCount = useMemo(
+    () =>
+      isPlaylist
+        ? playlistVideos.filter((video) => watchedForPlaylist[video.videoId])
+            .length
+        : 0,
+    [isPlaylist, playlistVideos, watchedForPlaylist],
+  )
+  const watchProgress = playlistVideos.length
+    ? Math.round((watchedCount / playlistVideos.length) * 100)
+    : 0
+  const lastWatchedVideo = useMemo(() => {
+    if (!isPlaylist) {
+      return null
+    }
+
+    return [...playlistVideos]
+      .filter((video) => watchedForPlaylist[video.videoId])
+      .sort((first, second) => second.index - first.index)[0] ?? null
+  }, [isPlaylist, playlistVideos, watchedForPlaylist])
   const playlistTitle =
     isPlaylist && playlistData?.title
       ? playlistData.title
@@ -918,6 +947,30 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
     }
   }
 
+  const toggleWatched = (video: YoutubePlaylistVideo) => {
+    if (target.type !== 'playlist') {
+      return
+    }
+
+    const playlistId = target.playlistId
+
+    setWatchedVideos((current) => {
+      const currentPlaylist = current[playlistId] ?? {}
+      const nextPlaylist = { ...currentPlaylist }
+
+      if (nextPlaylist[video.videoId]) {
+        delete nextPlaylist[video.videoId]
+      } else {
+        nextPlaylist[video.videoId] = true
+      }
+
+      return {
+        ...current,
+        [playlistId]: nextPlaylist,
+      }
+    })
+  }
+
   const goToPrevious = () => {
     if (!isPlaylist || !playlistVideos.length || activeIndex <= 0) {
       return
@@ -1047,6 +1100,27 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
                 <strong>{playlistTitle}</strong>
               </span>
               <small>{playlistLoading ? copy.loadingPlaylist : playlistMeta}</small>
+              {playlistVideos.length ? (
+                <div className="youtube-watch-summary">
+                  <div
+                    className="youtube-watch-progress"
+                    aria-label={copy.watchProgress(
+                      watchedCount,
+                      playlistVideos.length,
+                    )}
+                  >
+                    <span style={{ width: `${watchProgress}%` }} />
+                  </div>
+                  <small>
+                    {copy.watchProgress(watchedCount, playlistVideos.length)}
+                    {lastWatchedVideo
+                      ? ` · ${copy.lastWatched(
+                          displayVideoTitle(lastWatchedVideo, copy),
+                        )}`
+                      : ''}
+                  </small>
+                </div>
+              ) : null}
             </div>
             <select
               aria-label={copy.playlistOrderAria}
@@ -1068,34 +1142,52 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
               orderedPlaylistVideos.map((video) => {
                 const title = displayVideoTitle(video, copy)
                 const isActive = video.index === activeIndex
+                const isWatched = Boolean(watchedForPlaylist[video.videoId])
 
                 return (
-                  <button
+                  <div
                     key={`${video.videoId}-${video.index}`}
                     className={`youtube-playlist-item${
                       isActive ? ' is-active' : ''
-                    }`}
-                    type="button"
-                    aria-label={copy.playItem(title, video.index + 1)}
+                    }${isWatched ? ' is-watched' : ''}`}
                     data-active={isActive ? 'true' : 'false'}
-                    onClick={() => playPlaylistItem(video.index)}
+                    data-watched={isWatched ? 'true' : 'false'}
                   >
-                    <span className="youtube-playlist-index">
-                      {isActive ? (
-                        <Play size={12} strokeWidth={2} />
-                      ) : (
-                        video.index + 1
-                      )}
-                    </span>
-                    <span className="youtube-thumb">
-                      <img alt="" loading="lazy" src={video.thumbnail} />
-                      {video.durationLabel ? <small>{video.durationLabel}</small> : null}
-                    </span>
-                    <span className="youtube-playlist-copy">
-                      <strong>{title}</strong>
-                      <small>{displayVideoMeta(video, isActive, copy)}</small>
-                    </span>
-                  </button>
+                    <button
+                      className="youtube-playlist-main"
+                      type="button"
+                      aria-label={copy.playItem(title, video.index + 1)}
+                      onClick={() => playPlaylistItem(video.index)}
+                    >
+                      <span className="youtube-playlist-index">
+                        {isActive ? (
+                          <Play size={12} strokeWidth={2} />
+                        ) : (
+                          video.index + 1
+                        )}
+                      </span>
+                      <span className="youtube-thumb">
+                        <img alt="" loading="lazy" src={video.thumbnail} />
+                        {video.durationLabel ? <small>{video.durationLabel}</small> : null}
+                      </span>
+                      <span className="youtube-playlist-copy">
+                        <strong>{title}</strong>
+                        <small>{displayVideoMeta(video, isActive, copy)}</small>
+                      </span>
+                    </button>
+                    <button
+                      className={`youtube-watch-button${isWatched ? ' is-watched' : ''}`}
+                      type="button"
+                      aria-label={
+                        isWatched ? copy.markUnwatched(title) : copy.markWatched(title)
+                      }
+                      title={isWatched ? copy.markUnwatched(title) : copy.markWatched(title)}
+                      onClick={() => toggleWatched(video)}
+                    >
+                      <Check size={13} strokeWidth={2.2} />
+                      <span>{isWatched ? copy.watched : copy.notWatched}</span>
+                    </button>
+                  </div>
                 )
               })
             ) : (

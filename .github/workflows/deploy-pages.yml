@@ -19,6 +19,7 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_GOOGLE_CALENDAR_CLIENT_ID: ${{ vars.VITE_GOOGLE_CALENDAR_CLIENT_ID || secrets.VITE_GOOGLE_CALENDAR_CLIENT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -34,8 +35,8 @@ jobs:
 
       - name: Validate Supabase env
         run: |
-          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY repository variable."
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ] || [ -z "$VITE_GOOGLE_CALENDAR_CLIENT_ID" ]; then
+            echo "::error::Missing VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, or VITE_GOOGLE_CALENDAR_CLIENT_ID repository variable."
             echo "Add them in GitHub: Settings > Secrets and variables > Actions > Variables."
             exit 1
           fi

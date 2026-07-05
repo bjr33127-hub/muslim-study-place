@@ -131,6 +131,10 @@ export function normalizeTodo(todo: Partial<TodoItem>, index = 0): TodoItem {
       typeof todo.windowId === 'string' && todo.windowId
         ? todo.windowId
         : DEFAULT_TASK_WINDOW_ID,
+    revisionEventId:
+      typeof todo.revisionEventId === 'string' && todo.revisionEventId
+        ? todo.revisionEventId
+        : undefined,
     text: cleanText(todo.text),
     priority: normalizePriority(todo.priority),
     difficulty: normalizeDifficulty(todo.difficulty),

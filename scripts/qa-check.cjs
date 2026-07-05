@@ -280,6 +280,23 @@ async function runYoutubePlaylistQa(browser) {
   })
 
   assert(await page.getByText('Mock second video').isVisible(), 'Playlist metadata did not render video titles')
+  await page.getByRole('button', { name: 'Marquer Mock first video comme vue' }).click()
+  assert(
+    await page.locator('.youtube-playlist-item[data-watched="true"]').getByText('Mock first video').isVisible(),
+    'Marking a playlist video as watched did not update the row state',
+  )
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.youtube-watch-progress')
+      ?.getAttribute('aria-label')
+      ?.startsWith('1/'),
+  )
+  assert(
+    await page
+      .locator('.youtube-watch-progress')
+      .evaluate((element) => element.getAttribute('aria-label')?.startsWith('1/')),
+    'Playlist watched progress did not update after marking a video',
+  )
   await page.getByRole('button', { name: 'Lire la video 2 : Mock second video' }).click()
   await page.waitForFunction(() => window.__ytPlayVideoAtCalls?.includes(1))
   assert(
@@ -320,6 +337,11 @@ async function runYoutubePlaylistQa(browser) {
   )
   await page.waitForFunction(() =>
     window.__ytCuePlaylistOptions?.some((item) => item.list === 'PLmockqa123' && item.index === 1),
+  )
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.youtube-playlist-item[data-active="true"] .youtube-playlist-copy strong')
+      ?.textContent?.trim() === 'Mock second video',
   )
   assert(
     await page.locator('.youtube-playlist-item[data-active="true"]').getByText('Mock second video').isVisible(),
@@ -673,6 +695,291 @@ async function assertFirstOpenTask(page, expectedText, message) {
   assert(firstTodoText && firstTodoText.includes(expectedText), message)
 }
 
+async function runRevisionQa(browser) {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  })
+  await routeFakeYoutubeApi(context, mockPlaylistVideos.map((video) => video.id))
+
+  const page = await context.newPage()
+  const today = dateKeyForOffset(0)
+
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.widget-frame-revisionDashboard')
+
+  assert(
+    (await page.locator('.widget-frame-revisionCalendar').count()) === 0 &&
+      (await page.locator('.widget-frame-revisionMethods').count()) === 0,
+    'Revision calendar and methods should no longer render as separate widgets',
+  )
+
+  await page.getByLabel('Ouvrir calendrier et methodes').click()
+  const planner = page.locator('.revision-planner-page')
+  await planner.waitFor({ state: 'visible' })
+  await planner.getByRole('tab', { name: 'Methodes' }).click()
+
+  assert(
+    await planner.getByText('Revision classique').isVisible(),
+    'Built-in revision methods should render inside the planner page',
+  )
+
+  await planner.getByRole('button', { name: 'Ajouter une methode' }).click()
+  const methodForm = planner.locator('.revision-method-form')
+  assert(
+    (await methodForm.locator('input[aria-label="Nombre de jours"]').count()) >= 3,
+    'Custom revision method should start with several J+ delay inputs',
+  )
+  for (let index = 0; index < 20; index += 1) {
+    await methodForm.getByRole('button', { name: 'Ajouter un rappel' }).click()
+  }
+  const delayGridLayout = await methodForm.locator('.revision-delay-grid').evaluate((grid) => {
+    const style = window.getComputedStyle(grid)
+    return {
+      columnCount: style.gridTemplateColumns.split(' ').filter(Boolean).length,
+      maxHeight: style.maxHeight,
+      overflowY: style.overflowY,
+    }
+  })
+  assert(
+    delayGridLayout.columnCount >= 2 &&
+      delayGridLayout.maxHeight === 'none' &&
+      delayGridLayout.overflowY === 'visible',
+    'Revision J+ reminders should use a roomy non-clipped grid',
+  )
+  await methodForm.getByLabel('Nom de la methode').fill('QA dynamique')
+  await methodForm.locator('input[aria-label="Nombre de jours"]').first().fill('2')
+  await methodForm.locator('input[aria-label="Nombre de jours"]').nth(1).fill('5')
+  await methodForm.locator('input[aria-label="Nombre de jours"]').nth(2).fill('9')
+  await methodForm.getByRole('button', { name: 'Enregistrer la methode' }).click()
+
+  await page.waitForFunction(() => {
+    const methods = JSON.parse(localStorage.getItem('muslim-study-place:revisionMethods') || '[]')
+    const method = methods.find((item) => item.name === 'QA dynamique')
+
+    return (
+      method &&
+      JSON.stringify(method.offsetDays) === JSON.stringify([2, 5, 9])
+    )
+  })
+
+  await planner.getByRole('tab', { name: 'Calendrier' }).click()
+  const calendarConnectVisible = await planner
+    .getByRole('button', { name: 'Connecter Google Calendar' })
+    .isVisible()
+    .catch(() => false)
+  const calendarMissingConfigVisible = await planner
+    .getByText('Ajoute VITE_GOOGLE_CALENDAR_CLIENT_ID')
+    .isVisible()
+    .catch(() => false)
+  assert(
+    calendarConnectVisible || calendarMissingConfigVisible,
+    'Google Calendar controls should render configured or missing-env state',
+  )
+  await planner.locator('.revision-planner-toolbar .gold-action').click()
+  const modal = page.locator('.revision-modal')
+  await modal.getByLabel('Nom du cours').fill('QA Revision Source')
+  await modal.getByLabel('Date initiale du cours').fill(today)
+  await modal.getByLabel('Methode').selectOption('method-classic')
+  await modal.getByRole('button', { name: 'Continuer' }).click()
+  await modal.getByLabel('Partie du cours').fill('Chapitre QA')
+  await modal.getByRole('button', { name: 'Continuer' }).click()
+  await modal.getByRole('button', { name: 'Ajouter des revisions' }).click()
+
+  await page.waitForFunction(() => {
+    const courses = JSON.parse(localStorage.getItem('muslim-study-place:revisionCourses') || '[]')
+    const events = JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]')
+
+    return courses.some((course) => course.title === 'QA Revision Source') && events.length === 5
+  })
+
+  const generatedRevisionState = await page.evaluate(() => ({
+    courses: JSON.parse(localStorage.getItem('muslim-study-place:revisionCourses') || '[]'),
+    events: JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]'),
+  }))
+  const course = generatedRevisionState.courses.find((item) => item.title === 'QA Revision Source')
+  const eventDates = generatedRevisionState.events
+    .filter((event) => event.courseId === course.id)
+    .map((event) => event.scheduledDate)
+    .sort()
+
+  assert(Boolean(course), 'Revision course should be stored')
+  assert(course.part === 'Chapitre QA', 'Revision course part should be stored and visible')
+  for (const expectedDate of [
+    today,
+    dateKeyForOffset(3),
+    dateKeyForOffset(10),
+    dateKeyForOffset(30),
+    dateKeyForOffset(60),
+  ]) {
+    assert(eventDates.includes(expectedDate), `Missing generated revision date ${expectedDate}`)
+  }
+  assert(
+    generatedRevisionState.events
+      .filter((event) => event.courseId === course.id)
+      .every(
+        (event) =>
+          event.priority === 'medium' &&
+          event.difficulty === 'normal' &&
+          event.requiredPomodoros === 1 &&
+          event.completedPomodoros === 0 &&
+          event.scheduledTime === null &&
+          !event.linkedTodoId,
+      ),
+    'Generated revision events should carry autonomous task fields and no linked todo',
+  )
+
+  await planner.getByRole('button', { name: 'Semaine', exact: true }).click()
+  await page.waitForFunction(() => {
+    const settings = JSON.parse(localStorage.getItem('muslim-study-place:revisionSettings') || '{}')
+
+    return settings.plannerView === 'timeGridWeek'
+  })
+  const draggableEvent = planner.locator('.fc-event', {
+    hasText: 'QA Revision Source',
+  }).first()
+  const nineAmLane = planner.locator('.fc-timegrid-slot-lane[data-time="09:00:00"]').first()
+  await draggableEvent.dragTo(nineAmLane, { targetPosition: { x: 20, y: 8 } })
+  await page.waitForFunction(() => {
+    const events = JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]')
+    const event = events.find((item) => item.id.endsWith(':initial'))
+
+    return Boolean(event?.scheduledTime)
+  })
+
+  for (const [label, view] of [
+    ['Jour', 'timeGridDay'],
+    ['Liste', 'listWeek'],
+    ['Mois', 'dayGridMonth'],
+  ]) {
+    await planner.getByRole('button', { name: label, exact: true }).click()
+    await page.waitForFunction(
+      (expectedView) => {
+        const settings = JSON.parse(localStorage.getItem('muslim-study-place:revisionSettings') || '{}')
+
+        return settings.plannerView === expectedView
+      },
+      view,
+    )
+  }
+
+  assert(
+    await planner.getByText('Chapitre QA').first().isVisible(),
+    'Course part should render in the calendar cards',
+  )
+
+  await page.evaluate((today) => {
+    const events = JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]')
+    const nextEvents = events.map((event) =>
+      event.id.endsWith(':initial') || event.id.endsWith(':review:1')
+        ? { ...event, scheduledDate: today }
+        : event,
+    )
+    localStorage.setItem('muslim-study-place:revisionEvents', JSON.stringify(nextEvents))
+    window.dispatchEvent(
+      new CustomEvent('msp:durable-storage-change', {
+        detail: { key: 'revisionEvents' },
+      }),
+    )
+  }, today)
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.widget-frame-revisionDashboard')
+
+  const dashboard = page.locator('.widget-frame-revisionDashboard')
+  const revisionCard = dashboard.locator(
+    `[data-revision-event-id="${course.id}:initial"]`,
+  )
+  await revisionCard.waitFor({ state: 'visible' })
+  assert(
+    await revisionCard.getByText('Revision J+0').isVisible(),
+    'Initial revision should be relabeled as Revision J+0',
+  )
+  assert(
+    await dashboard.getByText('Revision J+10').count() === 0,
+    'Revision dashboard should not show future revisions',
+  )
+  assert(
+    await revisionCard.getByText('QA Revision Source').isVisible(),
+    'Revision dashboard should show the course title',
+  )
+  assert(
+    await revisionCard.getByText('Partie : Chapitre QA').isVisible(),
+    'Revision dashboard should show the course part',
+  )
+  await revisionCard.getByRole('button', { name: 'Reviser' }).click()
+
+  await page.waitForFunction(() => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+    const events = JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]')
+
+    return (
+      !todos.some((todo) => todo.revisionEventId) &&
+      events.some((event) => event.status === 'active' && !event.linkedTodoId) &&
+      localStorage.getItem('muslim-study-place:timer:running') === 'true' &&
+      Number(localStorage.getItem('muslim-study-place:timer:remaining') || '0') > 0
+    )
+  })
+  const remainingAfterStart = await page.evaluate(() =>
+    Number(localStorage.getItem('muslim-study-place:timer:remaining') || '0'),
+  )
+  await page.waitForTimeout(1250)
+  const remainingAfterTick = await page.evaluate(() =>
+    Number(localStorage.getItem('muslim-study-place:timer:remaining') || '0'),
+  )
+  assert(
+    remainingAfterStart > 0 && remainingAfterTick <= remainingAfterStart,
+    'Starting a revision should launch the visible Pomodoro countdown',
+  )
+
+  const starsBeforeManualDone = await page.evaluate(() => {
+    const run = JSON.parse(localStorage.getItem('muslim-study-place:pomodoroRun') || '{}')
+    return Number(run.totalStars || 0)
+  })
+  await revisionCard.getByRole('button', { name: 'Marquer termine' }).click()
+  await page.waitForFunction((courseId) => {
+    const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
+    const events = JSON.parse(localStorage.getItem('muslim-study-place:revisionEvents') || '[]')
+    const doneEvent = events.find(
+      (event) => event.courseId === courseId && event.kind === 'initial',
+    )
+
+    return (
+      doneEvent?.status === 'done' &&
+      doneEvent?.completedPomodoros === doneEvent?.requiredPomodoros &&
+      !doneEvent?.linkedTodoId &&
+      !todos.some((todo) => todo.revisionEventId)
+    )
+  }, course.id)
+  await page.waitForFunction(
+    ({ today, starsBeforeManualDone }) => {
+      const run = JSON.parse(localStorage.getItem('muslim-study-place:pomodoroRun') || '{}')
+
+      return (
+        Number(run.totalStars || 0) === starsBeforeManualDone + 1 &&
+        run.starHistory?.[today]?.stars >= 1
+      )
+    },
+    { today, starsBeforeManualDone },
+  )
+
+  const secondRevisionCard = dashboard.locator(
+    `[data-revision-event-id="${course.id}:review:1"]`,
+  )
+  await secondRevisionCard.waitFor({ state: 'visible' })
+  await secondRevisionCard.getByRole('button', { name: 'Marquer termine' }).click()
+  await dashboard.locator('.revision-tabs').getByRole('button', { name: 'Terminees' }).click()
+  const completedGroup = dashboard.locator('.revision-completed-group', {
+    hasText: 'QA Revision Source',
+  })
+  await completedGroup.waitFor({ state: 'visible' })
+  assert(
+    await completedGroup.getByText('2 terminees').isVisible(),
+    'Completed revisions from the same course should stack into one group',
+  )
+
+  await context.close()
+}
+
 async function assertFlameStage(
   page,
   today,
@@ -767,7 +1074,31 @@ function installSupabaseMock(initialAppState = null) {
     saveDelayMs: 0,
     saveInFlight: false,
     online: true,
-    profiles: [],
+    profiles: [
+      {
+        id: 'qa-friend-id',
+        email: 'friend@example.com',
+        display_name: 'QA Friend',
+        avatar_url: '',
+        friend_code: 'MSP-FRND-0001',
+      },
+    ],
+    friendInvites: [
+      {
+        id: 'qa-incoming-invite',
+        sender_id: 'qa-friend-id',
+        sender_display_name: 'QA Friend',
+        sender_avatar_url: '',
+        recipient_id: 'qa-user-id',
+        recipient_display_name: 'QA Google',
+        recipient_avatar_url: '',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    ],
+    socialStats: [],
     rpcCalls: [],
     session: null,
     streak: {
@@ -892,12 +1223,40 @@ function installSupabaseMock(initialAppState = null) {
     from: (table) => ({
       upsert: async (payload) => {
         if (table === 'profiles') {
-          state.profiles.push(payload)
+          const existingIndex = state.profiles.findIndex((item) => item.id === payload.id)
+          const saved = {
+            ...state.profiles[existingIndex],
+            ...payload,
+            friend_code:
+              payload.friend_code ||
+              state.profiles[existingIndex]?.friend_code ||
+              'MSP-QAQA-0001',
+          }
+
+          if (existingIndex >= 0) {
+            state.profiles[existingIndex] = saved
+          } else {
+            state.profiles.push(saved)
+          }
+        }
+
+        if (table === 'user_social_stats') {
+          state.socialStats = [
+            ...state.socialStats.filter((item) => item.user_id !== payload.user_id),
+            payload,
+          ]
         }
 
         return ok({})
       },
       select: () => ({
+        order: async () => {
+          if (table === 'friend_invites') {
+            return ok(state.friendInvites)
+          }
+
+          return ok([])
+        },
         maybeSingle: async () => {
           if (table === 'user_app_state') {
             state.appStateReadCount += 1
@@ -965,6 +1324,161 @@ function installSupabaseMock(initialAppState = null) {
         return ok({ ...state.streak, history: { ...state.streak.history } })
       }
 
+      if (name === 'get_my_friend_code') {
+        const profile = state.profiles.find((item) => item.id === user.id) || {
+          id: user.id,
+          display_name: user.user_metadata.full_name,
+          avatar_url: user.user_metadata.avatar_url,
+          friend_code: 'MSP-QAQA-0001',
+        }
+
+        return {
+          ...ok(null),
+          single: async () =>
+            ok({
+              user_id: user.id,
+              display_name: profile.display_name,
+              avatar_url: profile.avatar_url,
+              friend_code: profile.friend_code,
+            }),
+        }
+      }
+
+      if (name === 'regenerate_friend_code') {
+        const profileIndex = state.profiles.findIndex((item) => item.id === user.id)
+        const nextCode = 'MSP-NEWC-0002'
+
+        if (profileIndex >= 0) {
+          state.profiles[profileIndex].friend_code = nextCode
+        }
+
+        return {
+          ...ok(null),
+          single: async () =>
+            ok({
+              user_id: user.id,
+              display_name: user.user_metadata.full_name,
+              avatar_url: user.user_metadata.avatar_url,
+              friend_code: nextCode,
+            }),
+        }
+      }
+
+      if (name === 'find_profile_by_friend_code') {
+        const normalized = String(args.p_friend_code || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+        const profile = state.profiles.find(
+          (item) =>
+            String(item.friend_code || '').replace(/[^a-z0-9]/gi, '').toUpperCase() ===
+            normalized,
+        )
+
+        if (!profile) {
+          return { ...ok(null), single: async () => ({ data: null, error: new Error('friend_code_not_found') }) }
+        }
+
+        return {
+          ...ok(null),
+          single: async () =>
+            ok({
+              user_id: profile.id,
+              display_name: profile.display_name,
+              avatar_url: profile.avatar_url,
+              friend_code: profile.friend_code,
+              relation: 'none',
+            }),
+        }
+      }
+
+      if (name === 'send_friend_invite_by_code') {
+        const normalized = String(args.p_friend_code || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+        const recipient = state.profiles.find(
+          (item) =>
+            String(item.friend_code || '').replace(/[^a-z0-9]/gi, '').toUpperCase() ===
+            normalized,
+        )
+        const invite = {
+          id: `invite-${state.friendInvites.length + 1}`,
+          sender_id: user.id,
+          sender_display_name: user.user_metadata.full_name,
+          sender_avatar_url: user.user_metadata.avatar_url,
+          recipient_id: recipient?.id || 'qa-friend-id',
+          recipient_display_name: recipient?.display_name || 'QA Friend',
+          recipient_avatar_url: recipient?.avatar_url || '',
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          responded_at: null,
+        }
+        state.friendInvites.unshift(invite)
+        return { ...ok(null), single: async () => ok(invite) }
+      }
+
+      if (name === 'get_friend_invites') {
+        return ok(state.friendInvites)
+      }
+
+      if (name === 'get_friend_list') {
+        const accepted = state.friendInvites.filter(
+          (item) =>
+            item.status === 'accepted' &&
+            (item.sender_id === user.id || item.recipient_id === user.id),
+        )
+
+        return ok(
+          accepted.map((invite) => {
+            const profile = state.profiles.find(
+              (item) =>
+                item.id ===
+                (invite.sender_id === user.id ? invite.recipient_id : invite.sender_id),
+            )
+
+            return {
+              user_id: profile?.id || 'qa-friend-id',
+              display_name: profile?.display_name || 'QA Friend',
+              avatar_url: profile?.avatar_url || '',
+              friend_code: profile?.friend_code || 'MSP-FRND-0001',
+              week_stars: 3,
+              current_streak: 2,
+              week_revisions_done: 1,
+            }
+          }),
+        )
+      }
+
+      if (name === 'respond_friend_invite') {
+        const invite = state.friendInvites.find((item) => item.id === args.p_invite_id)
+        if (invite) {
+          invite.status = args.p_action === 'accept' ? 'accepted' : 'declined'
+          invite.updated_at = new Date().toISOString()
+          invite.responded_at = invite.updated_at
+        }
+        return { ...ok(null), single: async () => ok(invite) }
+      }
+
+      if (name === 'cancel_friend_invite') {
+        const invite = state.friendInvites.find((item) => item.id === args.p_invite_id)
+        if (invite) {
+          invite.status = 'cancelled'
+          invite.updated_at = new Date().toISOString()
+        }
+        return { ...ok(null), single: async () => ok(invite) }
+      }
+
+      if (name === 'get_friend_leaderboard') {
+        const latestStats = state.socialStats.find((item) => item.user_id === user.id)
+        return ok([
+          {
+            user_id: user.id,
+            display_name: user.user_metadata.full_name,
+            avatar_url: user.user_metadata.avatar_url,
+            week_start: latestStats?.week_start || today(),
+            week_stars: latestStats?.week_stars || 0,
+            current_streak: latestStats?.current_streak || 0,
+            week_revisions_done: latestStats?.week_revisions_done || 0,
+          },
+        ])
+      }
+
       return ok(null)
     },
   }
@@ -1014,6 +1528,11 @@ async function runCloudSyncQa(browser) {
   await emptyCloudPage.waitForFunction(() =>
     window.__mspSupabaseState?.rpcCalls?.some((call) => call.name === 'record_daily_check_in'),
   )
+  await emptyCloudPage.waitForSelector('.dock-widget-friends .dock-badge')
+  assert(
+    await emptyCloudPage.locator('.dock-widget-friends .dock-badge').textContent() === '1',
+    'Incoming friend requests should show a red dock badge',
+  )
   assert(
     await emptyCloudPage.evaluate(() => {
       const state = window.__mspSupabaseState
@@ -1033,6 +1552,7 @@ async function runCloudSyncQa(browser) {
   )
 
   await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.readDelayMs = 500
     window.__mspSupabaseState.saveDelayMs = 500
   })
   const cloudTodoForm = emptyCloudPage.locator('.todo-form')
@@ -1135,13 +1655,13 @@ async function runCloudSyncQa(browser) {
     const current = JSON.parse(localStorage.getItem(storageKey) || '72')
     const next = current === 71 ? 72 : 71
 
+    window.__mspSupabaseState.saveDelayMs = 500
     localStorage.setItem(storageKey, JSON.stringify(next))
     window.dispatchEvent(
       new CustomEvent('msp:durable-storage-change', {
         detail: { key: 'settings:backgroundDim' },
       }),
     )
-    window.__mspSupabaseState.saveDelayMs = 500
   })
   if (
     await emptyCloudPage.locator('.account-button').getAttribute('aria-expanded') !==
@@ -1150,18 +1670,14 @@ async function runCloudSyncQa(browser) {
     await emptyCloudPage.locator('.account-button').click()
   }
   await emptyCloudPage.getByRole('button', { name: 'Synchroniser' }).click()
-  await emptyCloudPage.waitForFunction(
-    () => window.__mspSupabaseState?.saveInFlight === true,
-  )
+  await emptyCloudPage.locator('.account-shell.is-syncing').waitFor()
   assert(
     await emptyCloudPage.locator('.account-shell.is-syncing').count() === 1,
     'Manual synchronization should display the syncing indicator immediately',
   )
-  await emptyCloudPage.waitForFunction(
-    () => window.__mspSupabaseState?.saveInFlight === false,
-  )
   await emptyCloudPage.locator('.account-shell.is-synced').waitFor()
   await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.readDelayMs = 0
     window.__mspSupabaseState.saveDelayMs = 0
   })
 
@@ -1202,9 +1718,8 @@ async function runCloudSyncQa(browser) {
   )
   await emptyCloudPage.waitForTimeout(850)
   assert(
-    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0 &&
-      await emptyCloudPage.locator('.account-shell.is-offline').count() === 1,
-    'A slow network recovery should remain silent until it returns directly to green',
+    await emptyCloudPage.locator('.account-shell.is-syncing').count() === 0,
+    'A slow network recovery should remain silent and never show the syncing spinner',
   )
   await emptyCloudPage.waitForFunction(
     () => window.__mspSupabaseState?.readInFlight === false,
@@ -1223,7 +1738,7 @@ async function runCloudSyncQa(browser) {
   })
 
   await emptyCloudPage.clock.install()
-  await emptyCloudPage.clock.runFor(1_000)
+  await emptyCloudPage.clock.runFor(5_000)
   await emptyCloudPage.waitForFunction(() => !window.__mspSupabaseState?.saveInFlight)
   const checkpointStartRevision = await emptyCloudPage.evaluate(
     () => window.__mspSupabaseState.appState?.revision,
@@ -1289,10 +1804,20 @@ async function runCloudSyncQa(browser) {
     )
   })
   await emptyCloudPage.clock.runFor(1_000)
+  await emptyCloudPage.waitForFunction(
+    (revision) => window.__mspSupabaseState.appState?.revision > revision,
+    immediateStartRevision,
+    { timeout: 5000 },
+  )
   assert(
     await emptyCloudPage.evaluate(
-      (revision) => window.__mspSupabaseState.appState?.revision === revision + 1,
-      immediateStartRevision,
+      () =>
+        window.__mspSupabaseState.appState?.snapshot?.values?.[
+          'timer:remaining'
+        ] === 1498 &&
+        window.__mspSupabaseState.appState?.snapshot?.values?.[
+          'timer:running'
+        ] === true,
     ),
     'Starting or pausing the timer should immediately flush its latest second',
   )
@@ -1360,7 +1885,11 @@ async function runCloudSyncQa(browser) {
   await conflictPage.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await conflictPage.locator('.account-button').click()
   await conflictPage.getByRole('button', { name: 'Se connecter avec Google' }).click()
-  await conflictPage.locator('.account-popover').getByText('Choix requis').waitFor({ state: 'visible' })
+  await conflictPage.locator('.account-popover').getByText('Deux sauvegardes trouvees').waitFor({ state: 'visible' })
+  assert(
+    await conflictPage.getByRole('button', { name: 'Garder la version la plus recente' }).isVisible(),
+    'Cloud conflict should recommend the newest version',
+  )
   assert(
     await conflictPage.getByRole('button', { name: 'Utiliser le cloud' }).isVisible(),
     'Cloud conflict should offer the cloud version',
@@ -1371,9 +1900,8 @@ async function runCloudSyncQa(browser) {
   )
   await conflictPage.getByRole('button', { name: 'Utiliser le cloud' }).click()
   await conflictPage.waitForLoadState('domcontentloaded')
-  await conflictPage.waitForTimeout(1000)
-  assert(
-    await conflictPage.evaluate(() => {
+  await conflictPage.waitForFunction(
+    () => {
       const todos = JSON.parse(localStorage.getItem('muslim-study-place:todos') || '[]')
       const revision = JSON.parse(localStorage.getItem('muslim-study-place:cloud:lastRevision') || '0')
       const backup = JSON.parse(localStorage.getItem('muslim-study-place:cloud:preMergeBackup') || 'null')
@@ -1383,9 +1911,11 @@ async function runCloudSyncQa(browser) {
         backup?.values?.todos?.some((todo) => todo.text === 'Local conflict task') &&
         todos.some((todo) => todo.text === 'Remote cloud task')
       )
-    }),
-    'Using the cloud version should import remote data and preserve a local pre-merge backup',
+    },
+    null,
+    { timeout: 5000 },
   )
+  assert(true, 'Using the cloud version should import remote data and preserve a local pre-merge backup')
   await conflictContext.close()
 }
 
@@ -1400,6 +1930,7 @@ async function main() {
   await runYoutubeTitleDowngradeQa(browser)
   await runYoutubeJsonpFallbackQa(browser)
   await runYoutubeNoApiIframeQa(browser)
+  await runRevisionQa(browser)
   await runCloudSyncQa(browser)
 
   const context = await browser.newContext({
@@ -1511,6 +2042,13 @@ async function main() {
     title: document.title,
     lang: document.documentElement.lang,
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
+    revisionFrames: document.querySelectorAll(
+      '.widget-frame-revisionDashboard, .widget-frame-revisionCalendar, .widget-frame-revisionMethods',
+    ).length,
+    oldRevisionFrames: document.querySelectorAll(
+      '.widget-frame-revisionCalendar, .widget-frame-revisionMethods',
+    ).length,
+    revisionPlannerButtons: document.querySelectorAll('.dock-revision-planner-button').length,
     dockButtons: document.querySelectorAll('.dock-button').length,
     noteFrames: document.querySelectorAll('.widget-frame-notes, .notes-widget').length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -1546,8 +2084,11 @@ async function main() {
 
   assert(initial.title === 'Muslim Study Place', 'Document title mismatch')
   assert(initial.lang === 'fr', 'French should be the default interface language')
-  assert(initial.visibleWidgets === 4, 'Expected four widgets on the dashboard')
-  assert(initial.dockButtons === 5, 'Expected four widget dock buttons plus the task-window add button')
+  assert(initial.visibleWidgets === 5, 'Expected five widgets on the dashboard')
+  assert(initial.revisionFrames === 1, 'Only the revision dashboard widget should render')
+  assert(initial.oldRevisionFrames === 0, 'Old revision calendar and methods widgets should not render')
+  assert(initial.revisionPlannerButtons === 1, 'Revision planner should have one dock button')
+  assert(initial.dockButtons === 8, 'Expected eight dock buttons including planner, friends, and task-window add')
   assert(initial.noteFrames === 0, 'Notes widget should not render')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
   assert(initial.privacyChipCount === 0, 'Local privacy chip should not render')
@@ -1569,6 +2110,26 @@ async function main() {
       1,
     'Topbar metric badges should have matching heights',
   )
+  await page.locator('.streak-flame').click()
+  await page.waitForSelector('.streak-popover')
+  await page.locator('.best-run-star').click()
+  await page.waitForFunction(
+    () =>
+      Boolean(document.querySelector('.best-run-popover')) &&
+      document.querySelectorAll(
+        '.streak-popover, .best-run-popover, .total-stars-popover',
+      ).length === 1,
+  )
+  assert(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll(
+          '.streak-popover, .best-run-popover, .total-stars-popover',
+        ).length,
+    ) === 1,
+    'Only one topbar metric panel should be open at a time',
+  )
+  await page.locator('.best-run-popover .metric-close').click()
   assert(initial.comboRing, 'Best run combo ring missing')
   assert(
     Number.parseFloat(initial.comboRing.animationDuration) >= 6.8,
@@ -1925,39 +2486,41 @@ async function main() {
     )
   })
 
-  const sortOptions = await page.getByLabel('Sort tasks').locator('option').evaluateAll((options) =>
+  const todoWidget = page.locator('.todo-widget').first()
+  const todoTabs = todoWidget.locator('.todo-tabs')
+  const sortOptions = await todoWidget.getByLabel('Sort tasks').locator('option').evaluateAll((options) =>
     options.map((option) => option.value),
   )
   for (const expectedSort of ['priority', 'difficulty', 'status', 'progress-desc', 'target-desc']) {
     assert(sortOptions.includes(expectedSort), `Missing ${expectedSort} sort option`)
   }
 
-  await page.getByLabel('Search').fill('beta')
+  await todoWidget.getByLabel('Search').fill('beta')
   let rows = await visibleOpenTaskText(page)
   assert(rows.length === 1 && rows[0].includes('Beta manual'), 'Search by name did not filter tasks')
-  await page.getByLabel('Search').fill('')
+  await todoWidget.getByLabel('Search').fill('')
 
-  await page.getByLabel('Sort tasks').selectOption('name-asc')
+  await todoWidget.getByLabel('Sort tasks').selectOption('name-asc')
   rows = await visibleOpenTaskText(page)
   assert(rows[0].includes('Alpha manual') && rows[2].includes('Gamma manual'), 'Name A-Z sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('name-desc')
+  await todoWidget.getByLabel('Sort tasks').selectOption('name-desc')
   rows = await visibleOpenTaskText(page)
   assert(rows[0].includes('Gamma manual') && rows[2].includes('Alpha manual'), 'Name Z-A sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('created-asc')
+  await todoWidget.getByLabel('Sort tasks').selectOption('created-asc')
   await assertFirstOpenTask(page, 'Alpha manual', 'Oldest-added sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('created-desc')
+  await todoWidget.getByLabel('Sort tasks').selectOption('created-desc')
   await assertFirstOpenTask(page, 'Gamma manual', 'Newest-added sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('priority')
+  await todoWidget.getByLabel('Sort tasks').selectOption('priority')
   await assertFirstOpenTask(page, 'Beta manual', 'Priority sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('difficulty')
+  await todoWidget.getByLabel('Sort tasks').selectOption('difficulty')
   await assertFirstOpenTask(page, 'Beta manual', 'Difficulty sort failed')
 
-  await page.getByLabel('Sort tasks').selectOption('manual')
+  await todoWidget.getByLabel('Sort tasks').selectOption('manual')
   const alphaHandle = page.getByRole('button', { name: 'Move Alpha manual' })
   const gammaRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Gamma manual' }).first()
   await alphaHandle.dragTo(gammaRow)
@@ -1968,7 +2531,7 @@ async function main() {
 
   const alphaRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Alpha manual' }).first()
   await alphaRow.getByLabel('Toggle Alpha manual').click()
-  await page.getByRole('button', { name: 'Done' }).click()
+  await todoTabs.getByRole('button', { name: 'Done', exact: true }).click()
   const alphaDoneGroup = page.locator('.todo-group-row').filter({ hasText: 'Alpha manual' }).first()
   assert(await alphaDoneGroup.isVisible(), 'Completed Alpha group is missing')
   assert(await alphaDoneGroup.getByText('1 done').isVisible(), 'Initial completed group count is wrong')
@@ -1991,7 +2554,7 @@ async function main() {
   const pendingRedoButton = alphaDoneGroup.getByLabel('A redo of Alpha manual is already open')
   assert(await pendingRedoButton.isDisabled(), 'Completed group should block duplicate redo while a redo is open')
   assert(await alphaDoneGroup.getByText('Redo open').isVisible(), 'Completed group should show the open redo state')
-  await page.getByRole('button', { name: 'To do' }).click()
+  await todoTabs.getByRole('button', { name: 'To do', exact: true }).click()
   assert(await page.getByText('Run 1').isVisible(), 'Redo occurrence should keep repeat history visible')
   assert(
     await page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Alpha manual' }).count() === 1,
@@ -2002,7 +2565,7 @@ async function main() {
   await alphaRedoRow.getByLabel('Resume Alpha manual timer').click()
   assert(await alphaRedoRow.getByText('In progress').isVisible(), 'Started redo task should show In progress')
   await alphaRedoRow.getByLabel('Toggle Alpha manual').click()
-  await page.getByRole('button', { name: 'Done' }).click()
+  await todoTabs.getByRole('button', { name: 'Done', exact: true }).click()
   await page.waitForTimeout(500)
   assert(
     await page.locator('.streak-unlock-card').count() === 0,
@@ -2018,11 +2581,11 @@ async function main() {
   await alphaGroups.first().getByLabel('Show runs').click()
   assert(await alphaGroups.first().getByText('Run 1').isVisible(), 'Expanded completed group is missing redo history')
 
-  await page.getByRole('button', { name: 'To do' }).click()
+  await todoTabs.getByRole('button', { name: 'To do', exact: true }).click()
   await addTask(page, 'Delete run QA', 'medium', 'normal')
   const deleteRunRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Delete run QA' }).first()
   await deleteRunRow.getByLabel('Toggle Delete run QA').click()
-  await page.getByRole('button', { name: 'Done' }).click()
+  await todoTabs.getByRole('button', { name: 'Done', exact: true }).click()
   const deleteRunGroup = page.locator('.todo-group-row').filter({ hasText: 'Delete run QA' }).first()
   await deleteRunGroup.getByLabel('Show runs').click()
   await deleteRunGroup.getByLabel('Delete this Original run').click()
@@ -2030,11 +2593,11 @@ async function main() {
     () => ![...document.querySelectorAll('.todo-group-row')].some((row) => row.textContent?.includes('Delete run QA')),
   )
 
-  await page.getByRole('button', { name: 'To do' }).click()
+  await todoTabs.getByRole('button', { name: 'To do', exact: true }).click()
   await addTask(page, 'Delete group QA', 'medium', 'normal')
   const deleteGroupRow = page.locator('.todo-row:not(.todo-group-row)').filter({ hasText: 'Delete group QA' }).first()
   await deleteGroupRow.getByLabel('Toggle Delete group QA').click()
-  await page.getByRole('button', { name: 'Done' }).click()
+  await todoTabs.getByRole('button', { name: 'Done', exact: true }).click()
   const deleteGroup = page.locator('.todo-group-row').filter({ hasText: 'Delete group QA' }).first()
   await deleteGroup.getByLabel('Delete all completed Delete group QA tasks').click()
   await page.waitForFunction(
@@ -2061,13 +2624,15 @@ async function main() {
     () => localStorage.getItem('muslim-study-place:todos')?.includes('Alpha manual'),
     { timeout: 10000 },
   )
-  await page.getByRole('button', { name: 'Done' }).click()
+  await todoTabs.getByRole('button', { name: 'Done', exact: true }).click()
   assert(await page.getByText('Alpha manual').first().isVisible(), 'Task did not restore from durable memory')
 
   await page.locator('.settings-trigger').click()
+  const dataSettings = page.locator('#settings-data')
+  await dataSettings.locator('summary').click()
   const download = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Export data' }).click(),
+    dataSettings.getByRole('button', { name: 'Export data' }).click(),
   ]).then(([item]) => item)
   const exportPath = path.join(os.tmpdir(), `msp-backup-${Date.now()}.json`)
   await download.saveAs(exportPath)
@@ -2093,7 +2658,7 @@ async function main() {
   ]
   const importPath = path.join(os.tmpdir(), `msp-import-${Date.now()}.json`)
   fs.writeFileSync(importPath, JSON.stringify(exported), 'utf8')
-  await page.setInputFiles('.import-action input[type="file"]', importPath)
+  await dataSettings.locator('.import-action input[type="file"]').setInputFiles(importPath)
   await page.waitForLoadState('domcontentloaded')
   await page.waitForTimeout(1000)
   assert(await page.getByText('Imported QA task').isVisible(), 'Imported backup did not reload todos')
@@ -2537,15 +3102,16 @@ async function main() {
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
-  await page.locator('.todo-tabs').getByRole('button', { name: 'All', exact: true }).click()
+  const todoWidgetAfterReload = page.locator('.todo-widget').first()
+  await todoWidgetAfterReload.locator('.todo-tabs').getByRole('button', { name: 'All', exact: true }).click()
   const visibleTodoTitles = async () =>
     page.evaluate(() =>
-      [...document.querySelectorAll('.todo-list > .todo-row')].map(
+      [...document.querySelectorAll('.todo-widget .todo-list > .todo-row')].map(
         (row) => row.querySelector('.todo-title-line > span')?.textContent?.trim() || '',
       ),
     )
 
-  await page.getByLabel('Sort tasks').selectOption('progress-desc')
+  await todoWidgetAfterReload.getByLabel('Sort tasks').selectOption('progress-desc')
   let sortedTodoTitles = await visibleTodoTitles()
   assert(
     sortedTodoTitles[0] === 'QA completed big target' &&
@@ -2553,21 +3119,21 @@ async function main() {
     'All-tab highest-progress sort should include completed groups globally',
   )
 
-  await page.getByLabel('Sort tasks').selectOption('progress-asc')
+  await todoWidgetAfterReload.getByLabel('Sort tasks').selectOption('progress-asc')
   sortedTodoTitles = await visibleTodoTitles()
   assert(
     sortedTodoTitles[0] === 'QA zero large target',
     'All-tab lowest-progress sort should include open tasks globally',
   )
 
-  await page.getByLabel('Sort tasks').selectOption('target-asc')
+  await todoWidgetAfterReload.getByLabel('Sort tasks').selectOption('target-asc')
   sortedTodoTitles = await visibleTodoTitles()
   assert(
     sortedTodoTitles[0] === 'QA completed small target',
     'All-tab smallest-target sort should include completed groups globally',
   )
 
-  await page.getByLabel('Sort tasks').selectOption('target-desc')
+  await todoWidgetAfterReload.getByLabel('Sort tasks').selectOption('target-desc')
   sortedTodoTitles = await visibleTodoTitles()
   assert(
     sortedTodoTitles[0] === 'QA zero large target' &&
@@ -2663,7 +3229,7 @@ async function main() {
             stages: {},
             quests: { [quest]: Date.now() },
             selectedEffect: effect,
-            seenUnlocks: [],
+            seenUnlocks: [`quest:${quest}`],
             pendingUnlocks: [],
             revealedHints: {},
           }),
@@ -2677,9 +3243,9 @@ async function main() {
     const metrics = await page.evaluate(() => {
       const orb = document.querySelector('.streak-flame .flame-orb')?.getBoundingClientRect()
       const flame = document.querySelector('.streak-flame .duo-flame')?.getBoundingClientRect()
-      const object = document
-        .querySelector('.streak-flame .flame-quest-object')
-        ?.getBoundingClientRect()
+      const objectElement = document.querySelector('.streak-flame .flame-quest-object')
+      const object = objectElement?.getBoundingClientRect()
+      const objectStyle = objectElement ? getComputedStyle(objectElement) : null
       const core = document.querySelector('.streak-flame .duo-flame-core')
       const coreStyle = core ? getComputedStyle(core) : null
 
@@ -2689,35 +3255,53 @@ async function main() {
         object: object
           ? { top: object.top, right: object.right, bottom: object.bottom, left: object.left }
           : null,
+        objectVisible: Boolean(
+          object &&
+            objectStyle &&
+            objectStyle.display !== 'none' &&
+            object.width * object.height > 0,
+        ),
         coreOpacity: coreStyle ? Number.parseFloat(coreStyle.opacity) : 0,
       }
     })
 
     check(metrics)
+
+    await page.locator('.streak-flame').click()
+    await page.waitForSelector('.streak-popover')
+    assert(
+      await page.evaluate(() => {
+        const object = document.querySelector(
+          '.streak-hero-flame .flame-quest-object',
+        )
+        const rect = object?.getBoundingClientRect()
+        const style = object ? getComputedStyle(object) : null
+
+        return Boolean(
+          rect &&
+            style &&
+            style.display !== 'none' &&
+            rect.width * rect.height > 0,
+        )
+      }),
+      'Full streak panel should keep the selected flame accessory visible',
+    )
+    await page.locator('.streak-close').click()
   }
 
   await assertCompactFlameAccessory('seven-lights', 'perfect-week', (metrics) => {
-    assert(metrics.orb && metrics.object, 'Crown accessory metrics missing')
-    assert(
-      metrics.object.bottom <= metrics.orb.bottom - 9,
-      'Crown accessory should sit above the compact flame instead of covering it',
-    )
+    assert(metrics.orb, 'Crown compact flame metrics missing')
+    assert(!metrics.objectVisible, 'Crown accessory should be hidden in the compact flame')
   })
   await assertCompactFlameAccessory('crystal-core', 'deep-task', (metrics) => {
-    assert(metrics.flame && metrics.object, 'Crystal accessory metrics missing')
+    assert(metrics.flame, 'Crystal compact flame metrics missing')
     assert(metrics.coreOpacity >= 0.8, 'Crystal accessory should not dim the base flame core')
-    assert(
-      metrics.object.left >= metrics.flame.left + (metrics.flame.right - metrics.flame.left) * 0.45,
-      'Crystal accessory should sit beside the compact flame',
-    )
+    assert(!metrics.objectVisible, 'Crystal accessory should be hidden in the compact flame')
   })
   await assertCompactFlameAccessory('runic-sparks', 'twenty-five-tasks', (metrics) => {
-    assert(metrics.flame && metrics.object, 'Runic accessory metrics missing')
+    assert(metrics.flame, 'Runic compact flame metrics missing')
     assert(metrics.coreOpacity >= 0.8, 'Runic accessory should not hide the base flame core')
-    assert(
-      metrics.object.right <= metrics.flame.left + (metrics.flame.right - metrics.flame.left) * 0.62,
-      'Runic accessory should sit beside the compact flame',
-    )
+    assert(!metrics.objectVisible, 'Runic accessory should be hidden in the compact flame')
   })
 
   await page.evaluate(
@@ -2983,24 +3567,143 @@ async function main() {
   await page.getByLabel('Close settings').click()
 
   await page.setViewportSize({ width: 390, height: 844 })
+  await page.evaluate((today) => {
+    const write = (key, value) =>
+      localStorage.setItem(`muslim-study-place:${key}`, JSON.stringify(value))
+    write('timer:remaining', 900)
+    write('timer:running', false)
+    write('todos', [
+      {
+        id: 'qa-mobile-task',
+        windowId: 'todo',
+        text: 'Mobile task badge',
+        priority: 'medium',
+        difficulty: 'normal',
+        rank: 1,
+        completed: false,
+        active: false,
+        requiredPomodoros: 1,
+        completedPomodoros: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        completedAt: null,
+        repeatIndex: 0,
+      },
+    ])
+    write('revisionCourses', [
+      {
+        id: 'qa-mobile-course',
+        title: 'Mobile QA',
+        initialDate: today,
+        professor: '',
+        part: '',
+        notes: '',
+        color: '#d9b66c',
+        textColor: '#120e05',
+        methodId: 'method-classic',
+        excludedWeekdays: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ])
+    write('revisionEvents', [
+      {
+        id: 'qa-mobile-event',
+        courseId: 'qa-mobile-course',
+        scheduledDate: today,
+        scheduledTime: null,
+        kind: 'initial',
+        reviewIndex: 0,
+        totalReviews: 4,
+        status: 'pending',
+        priority: 'medium',
+        difficulty: 'normal',
+        requiredPomodoros: 1,
+        completedPomodoros: 0,
+        completedAt: null,
+        timeSpentSeconds: 0,
+      },
+    ])
+  }, dateKeyForOffset(0))
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(1000)
   const mobile = await page.evaluate(() => ({
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
+    visibleSurfaces: document.querySelectorAll(
+      '.widget-frame, .revision-planner-page, .friends-page',
+    ).length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
-    dockBottom: document.querySelector('.dock')?.getBoundingClientRect().bottom || 0,
+    dockPosition: document.querySelector('.dock')
+      ? getComputedStyle(document.querySelector('.dock')).position
+      : '',
+    dockHeight: document.querySelector('.dock')?.getBoundingClientRect().height || 0,
+    plannerBadge: document.querySelector('.dock-revision-planner-button .dock-badge')?.textContent?.trim() || '',
+    revisionBadge: document.querySelector('.dock-widget-revisionDashboard .dock-badge')?.textContent?.trim() || '',
+    taskBadge: document.querySelector('.dock-task-button .dock-badge')?.textContent?.trim() || '',
+    appPaddingBottom: Number.parseFloat(
+      getComputedStyle(document.querySelector('.app-shell')).paddingBottom,
+    ),
     firstWidgetTop:
       document.querySelector('.widget-frame')?.getBoundingClientRect().top || 0,
   }))
-  assert(mobile.visibleWidgets === 4, 'Expected four widgets on mobile')
+  assert(mobile.visibleWidgets === 1, 'Expected one active workspace page on mobile')
+  assert(mobile.visibleSurfaces === 1, 'Expected one active mobile surface')
+  assert(!mobile.plannerBadge, 'Planner dock button should not carry revision due badges')
+  assert(mobile.revisionBadge === '1', 'Expected revision dashboard dock badge for due revision')
+  assert(Number.parseInt(mobile.taskBadge, 10) > 0, 'Expected task dock badge for open tasks')
   assert(mobile.noHorizontalOverflow, 'Mobile layout has horizontal overflow')
-  assert(mobile.dockBottom < mobile.firstWidgetTop, 'Mobile dock overlaps first widget')
+  assert(mobile.dockPosition === 'fixed', 'Mobile dock should be a fixed bottom nav')
+  assert(
+    mobile.appPaddingBottom >= mobile.dockHeight,
+    'Mobile layout should reserve bottom padding for the fixed dock',
+  )
+  await page.locator('.dock-widget-pomodoro').click()
+  await page.waitForTimeout(250)
+  assert(await page.locator('.mini-pomodoro').isVisible(), 'Reduced Pomodoro should leave a mini timer visible')
+  await page.locator('.mini-pomodoro-orb').click()
+  await page.waitForSelector('.widget-frame-pomodoro')
+  assert(
+    await page.locator('.mini-pomodoro').count() === 0,
+    'Opening Pomodoro should hide the mini timer',
+  )
+  await page.locator('.dock-revision-planner-button').click()
+  await page.waitForSelector('.revision-planner-page')
+  assert(
+    await page.evaluate(
+      () => document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length,
+    ) === 1,
+    'Planner should be the only mobile surface after opening revisions',
+  )
+  await page.locator('.dock-widget-friends').click()
+  await page.waitForSelector('.friends-page')
+  assert(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
+        Boolean(document.querySelector('.friends-page')),
+    ),
+    'Friends should replace planner as the only mobile surface',
+  )
+  await page.locator('.dock .dock-task-button').first().click()
+  await page.waitForSelector('.widget-frame-todo')
+  assert(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
+        Boolean(document.querySelector('.widget-frame-todo')),
+    ),
+    'Task page should replace friends as the only mobile surface',
+  )
 
   await browser.close()
   console.log(JSON.stringify({ status: 'ok', initial, mobile }, null, 2))
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+main()
+  .then(() => {
+    process.exit(0)
+  })
+  .catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })

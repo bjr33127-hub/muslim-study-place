@@ -1,5 +1,22 @@
-import { CheckSquare, Image, Timer, Video } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  BarChart3,
+  CheckSquare,
+  Image,
+  Pause,
+  Play,
+  Timer,
+  Users,
+  Video,
+} from 'lucide-react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 import { BackgroundLayer } from './components/layout/BackgroundLayer'
 import { Dock } from './components/layout/Dock'
@@ -8,15 +25,19 @@ import { TopBar } from './components/layout/TopBar'
 import { WidgetFrame } from './components/layout/WidgetFrame'
 import { BackgroundsWidget } from './components/widgets/BackgroundsWidget'
 import { PomodoroWidget } from './components/widgets/PomodoroWidget'
+import { RevisionDashboardWidget } from './components/widgets/RevisionDashboardWidget'
 import { TodoWidget } from './components/widgets/TodoWidget'
 import { YoutubeWidget } from './components/widgets/YoutubeWidget'
 import { useCloudSync } from './hooks/useCloudSync'
 import { usePersistentState } from './hooks/usePersistentState'
+import { useSocial } from './hooks/useSocial'
 import {
   BUILT_IN_BACKGROUNDS,
   DEFAULT_FLAME_EVOLUTION,
   DEFAULT_LAYOUTS,
   DEFAULT_POMODORO_RUN,
+  DEFAULT_GOOGLE_CALENDAR_SYNC,
+  DEFAULT_REVISION_SETTINGS,
   DEFAULT_STREAK,
   DEFAULT_TIMER_SETTINGS,
   WIDGET_ORDER,
@@ -30,6 +51,7 @@ import {
 import {
   recordCloudDailyCheckIn,
   recordCloudStreakActivity,
+  getBrowserTimezone,
   setCloudStreakDailyGoal,
 } from './lib/cloudSync'
 import {
@@ -45,8 +67,10 @@ import {
   buildPendingFlameEvolutionCue,
   claimFlameEvolutionUnlocks,
   discoverFlameEvolution,
+  FLAME_QUEST_IDS,
   normalizeFlameEvolution,
   revealFlameAchievementHint,
+  SECRET_FLAME_STAGES,
   selectFlameQuestEffect,
 } from './lib/flameEvolution'
 import { normalizeTimerSettings, timerSeconds } from './lib/timer'
@@ -63,8 +87,10 @@ import {
 import {
   DEFAULT_TASK_WINDOW_ID,
   DEFAULT_TASK_WINDOWS,
+  TASK_WINDOW_EMOJIS,
   normalizeTaskWindowLayouts,
   normalizeTaskWindows,
+  taskWindowEmojiForIndex,
 } from './lib/taskWindows'
 import { publicPath } from './lib/publicPath'
 import {
@@ -72,7 +98,31 @@ import {
   getCopy,
   normalizeLanguage,
 } from './lib/i18n'
-import { normalizePomodoroRun } from './lib/pomodoroRun'
+import {
+  normalizePomodoroRun,
+  getPomodoroWeekSummary,
+  recordRevisionManualCompletionReward,
+} from './lib/pomodoroRun'
+import {
+  buildRevisionEventsForCourses,
+  completedEventsThisWeek,
+  dateKey,
+  hydrateRevisionEventsFromLinkedTodos,
+  normalizeGoogleCalendarSync,
+  normalizeRevisionCourses,
+  normalizeRevisionEvents,
+  normalizeRevisionMethods,
+  normalizeRevisionSettings,
+  revisionsDueToday,
+  revisionOffsetLabel,
+  todayRevisionEvents,
+  weekStartKey,
+} from './lib/revisions'
+import {
+  isGoogleCalendarConfigured,
+  requestGoogleCalendarAccessToken,
+  syncRevisionEventsToGoogleCalendar,
+} from './lib/googleCalendar'
 import {
   buildDurableSnapshot,
   getDurableStorageStatus,
@@ -87,6 +137,11 @@ import type {
   FlameUnlockKey,
   MemoryStatus,
   PomodoroRunState,
+  GoogleCalendarSyncState,
+  RevisionCourse,
+  RevisionEvent,
+  RevisionMethod,
+  RevisionSettings,
   StreakUnlockCue,
   TaskWindow,
   TaskPomodoroMemory,
@@ -102,13 +157,30 @@ import type {
 const widgetIcons: Record<WidgetId, ReactNode> = {
   pomodoro: <Timer size={18} strokeWidth={1.8} />,
   todo: <CheckSquare size={18} strokeWidth={1.8} />,
+  revisionDashboard: <BarChart3 size={18} strokeWidth={1.8} />,
+  friends: <Users size={18} strokeWidth={1.8} />,
   youtube: <Video size={18} strokeWidth={1.8} />,
   backgrounds: <Image size={18} strokeWidth={1.8} />,
 }
 
-const CURRENT_LAYOUT_VERSION = 11
+const FriendsPage = lazy(() =>
+  import('./components/layout/FriendsPage').then((module) => ({
+    default: module.FriendsPage,
+  })),
+)
+
+const RevisionPlannerPage = lazy(() =>
+  import('./components/layout/RevisionPlannerPage').then((module) => ({
+    default: module.RevisionPlannerPage,
+  })),
+)
+
+const CURRENT_LAYOUT_VERSION = 15
 const STREAK_TASK_UNLOCK_KEY = 'muslim-study-place:streak:lastTaskUnlockDate'
-const STATIC_WIDGET_ORDER = WIDGET_ORDER.filter((id) => id !== 'todo')
+const STATIC_WIDGET_ORDER = WIDGET_ORDER.filter(
+  (id) => id !== 'todo' && id !== 'friends',
+)
+type MobileWorkspacePage = WidgetId | `task:${string}` | 'planner' | 'friends' | null
 
 const DEFAULT_MEMORY_STATUS: MemoryStatus = {
   available: false,
@@ -131,6 +203,81 @@ function createTaskPomodoroMemory(
     completedInTarget,
     currentRun: completedInTarget,
   }
+}
+
+function taskMobilePage(id: string): MobileWorkspacePage {
+  return `task:${id}` as `task:${string}`
+}
+
+function formatCompactTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+
+  return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+type MiniPomodoroButtonProps = {
+  mode: TimerMode
+  modeLabel: string
+  remaining: number
+  progress: number
+  isRunning: boolean
+  label: string
+  toggleLabel: string
+  onOpen: () => void
+  onToggleRunning: () => void
+}
+
+function MiniPomodoroButton({
+  mode,
+  modeLabel,
+  remaining,
+  progress,
+  isRunning,
+  label,
+  toggleLabel,
+  onOpen,
+  onToggleRunning,
+}: MiniPomodoroButtonProps) {
+  const dashOffset = 100 - progress
+
+  return (
+    <div className={`mini-pomodoro mode-${mode}`} aria-label={label}>
+      <button
+        className="mini-pomodoro-orb"
+        type="button"
+        aria-label={label}
+        onClick={onOpen}
+      >
+        <svg className="mini-pomodoro-ring" viewBox="0 0 48 48" aria-hidden="true">
+          <circle className="mini-pomodoro-track" cx="24" cy="24" r="20" pathLength="100" />
+          <circle
+            className="mini-pomodoro-progress"
+            cx="24"
+            cy="24"
+            r="20"
+            pathLength="100"
+            strokeDasharray="100"
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <span>{formatCompactTime(remaining)}</span>
+        <small>{modeLabel}</small>
+      </button>
+      <button
+        className="mini-pomodoro-toggle"
+        type="button"
+        aria-label={toggleLabel}
+        onClick={onToggleRunning}
+      >
+        {isRunning ? (
+          <Pause size={13} strokeWidth={2} />
+        ) : (
+          <Play size={13} strokeWidth={2} />
+        )}
+      </button>
+    </div>
+  )
 }
 
 function syncTaskPomodoroMemory(
@@ -269,7 +416,60 @@ function App() {
   )
   const [todosState, setTodos] = usePersistentState<TodoItem[]>('todos', seedTodos)
   const todos = useMemo(() => normalizeTodos(todosState), [todosState])
+  const [revisionMethodsState, setRevisionMethods] = usePersistentState<
+    RevisionMethod[]
+  >('revisionMethods', [])
+  const revisionMethods = useMemo(
+    () => normalizeRevisionMethods(revisionMethodsState),
+    [revisionMethodsState],
+  )
+  const [revisionCoursesState, setRevisionCourses] = usePersistentState<
+    RevisionCourse[]
+  >('revisionCourses', [])
+  const revisionCourses = useMemo(
+    () => normalizeRevisionCourses(revisionCoursesState),
+    [revisionCoursesState],
+  )
+  const [revisionEventsState, setRevisionEvents] = usePersistentState<
+    RevisionEvent[]
+  >('revisionEvents', [])
+  const revisionEvents = useMemo(
+    () =>
+      hydrateRevisionEventsFromLinkedTodos(
+        normalizeRevisionEvents(revisionEventsState),
+        todos,
+      ),
+    [revisionEventsState, todos],
+  )
+  const [revisionSettingsState, setRevisionSettings] =
+    usePersistentState<RevisionSettings>(
+      'revisionSettings',
+      DEFAULT_REVISION_SETTINGS,
+    )
+  const revisionSettings = useMemo(
+    () => normalizeRevisionSettings(revisionSettingsState),
+    [revisionSettingsState],
+  )
+  const [revisionGoogleCalendarState, setRevisionGoogleCalendar] =
+    usePersistentState<GoogleCalendarSyncState>(
+      'revisionGoogleCalendar',
+      DEFAULT_GOOGLE_CALENDAR_SYNC,
+    )
+  const revisionGoogleCalendar = useMemo(
+    () => normalizeGoogleCalendarSync(revisionGoogleCalendarState),
+    [revisionGoogleCalendarState],
+  )
+  const googleCalendarTokenRef = useRef<string | null>(null)
+  const googleCalendarSyncTimerRef = useRef<number>(0)
+  const [googleCalendarSessionConnected, setGoogleCalendarSessionConnected] =
+    useState(false)
   const activeTask = todos.find((todo) => todo.active && !todo.completed)
+  const activeRevisionEvent = revisionEvents.find(
+    (event) => event.status === 'active' && event.completedPomodoros < event.requiredPomodoros,
+  )
+  const activeRevisionCourse = activeRevisionEvent
+    ? revisionCourses.find((course) => course.id === activeRevisionEvent.courseId)
+    : undefined
   const [timerMode, setTimerMode] = usePersistentState<TimerMode>(
     'timer:mode',
     'focus',
@@ -317,9 +517,15 @@ function App() {
               completedInTarget: syncedActiveTaskMemory.completedInTarget,
               currentRun: syncedActiveTaskMemory.currentRun,
             }
+          : activeRevisionEvent
+            ? {
+                targetPomodoros: activeRevisionEvent.requiredPomodoros,
+                completedInTarget: activeRevisionEvent.completedPomodoros,
+                currentRun: activeRevisionEvent.completedPomodoros,
+              }
           : {}),
       }),
-    [normalizedPomodoroRun, syncedActiveTaskMemory],
+    [activeRevisionEvent, normalizedPomodoroRun, syncedActiveTaskMemory],
   )
   const previousRunRef = useRef(run)
   const [bestRunBurstKey, setBestRunBurstKey] = useState(0)
@@ -334,6 +540,42 @@ function App() {
     () => normalizeFlameEvolution(flameEvolutionState),
     [flameEvolutionState],
   )
+  const socialStats = useMemo(() => {
+    const weekStart = weekStartKey()
+    const week = getPomodoroWeekSummary(normalizedPomodoroRun)
+    const hasAnyStarHistory = Object.values(normalizedPomodoroRun.starHistory).some(
+      (day) => day.stars > 0,
+    )
+    const weekRevisionsDone = completedEventsThisWeek(revisionEvents, weekStart)
+      .length
+
+    return {
+      weekStart,
+      weekStars: week.weekStars
+        ? week.weekStars
+        : hasAnyStarHistory
+          ? 0
+          : normalizedPomodoroRun.totalStars,
+      currentStreak: streak.current,
+      weekRevisionsDone,
+      weekRevisionDailyAverage: Math.round((weekRevisionsDone / 7) * 10) / 10,
+      totalStars: normalizedPomodoroRun.totalStars,
+      bestStreak: streak.best,
+      bestRun: normalizedPomodoroRun.bestRun,
+      flameStages: SECRET_FLAME_STAGES.filter((stage) =>
+        Boolean(flameEvolution.stages[stage]),
+      ),
+      flameQuests: FLAME_QUEST_IDS.filter((quest) =>
+        Boolean(flameEvolution.quests[quest]),
+      ),
+      selectedFlameEffect: flameEvolution.selectedEffect,
+    }
+  }, [flameEvolution, normalizedPomodoroRun, revisionEvents, streak])
+  const social = useSocial({
+    client: cloudSync.client,
+    user: cloudSync.user,
+    stats: socialStats,
+  })
   const previousStreakRef = useRef(streak)
   const [streakIgniteKey, setStreakIgniteKey] = useState(0)
   const lastTaskUnlockDateRef = useRef<string | null>(null)
@@ -355,7 +597,18 @@ function App() {
     'settings:particlesEnabled',
     true,
   )
+  const [highContrast, setHighContrast] = usePersistentState(
+    'settings:highContrast',
+    false,
+  )
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [revisionPlannerOpen, setRevisionPlannerOpen] = useState(false)
+  const [friendsPageOpen, setFriendsPageOpen] = useState(false)
+  const [isMobileWorkspace, setIsMobileWorkspace] = useState(() =>
+    window.matchMedia('(max-width: 859px)').matches,
+  )
+  const [mobileWorkspacePage, setMobileWorkspacePage] =
+    useState<MobileWorkspacePage>('pomodoro')
   const [folderBackgrounds, setFolderBackgrounds] = useState<BackgroundAsset[]>([])
   const [uploadedBackgrounds, setUploadedBackgrounds] = useState<BackgroundAsset[]>(
     [],
@@ -368,10 +621,28 @@ function App() {
   const [memoryNotice, setMemoryNotice] = useState('')
 
   useEffect(() => {
+    const query = window.matchMedia('(max-width: 859px)')
+    const syncMobileWorkspace = () => setIsMobileWorkspace(query.matches)
+
+    syncMobileWorkspace()
+    query.addEventListener('change', syncMobileWorkspace)
+
+    return () => query.removeEventListener('change', syncMobileWorkspace)
+  }, [])
+
+  useEffect(() => {
     if (languageState !== language) {
       setLanguageState(language)
     }
   }, [language, languageState, setLanguageState])
+
+  useEffect(() => {
+    const normalizedStored = normalizeRevisionEvents(revisionEventsState)
+
+    if (JSON.stringify(normalizedStored) !== JSON.stringify(revisionEvents)) {
+      setRevisionEvents(revisionEvents)
+    }
+  }, [revisionEvents, revisionEventsState, setRevisionEvents])
 
   useEffect(() => {
     const previous = previousStreakRef.current
@@ -530,6 +801,39 @@ function App() {
 
   useEffect(() => {
     if (!activeTask) {
+      if (activeRevisionEvent) {
+        setRevisionEvents((current) => {
+          let changed = false
+          const next = normalizeRevisionEvents(current).map((event) => {
+            if (event.id !== activeRevisionEvent.id) {
+              return event
+            }
+
+            const completedPomodoros = Math.min(
+              event.completedPomodoros,
+              run.targetPomodoros,
+            )
+
+            if (
+              event.requiredPomodoros === run.targetPomodoros &&
+              event.completedPomodoros === completedPomodoros
+            ) {
+              return event
+            }
+
+            changed = true
+
+            return {
+              ...event,
+              requiredPomodoros: run.targetPomodoros,
+              completedPomodoros,
+            }
+          })
+
+          return changed ? next : current
+        })
+      }
+
       return
     }
 
@@ -561,9 +865,11 @@ function App() {
     })
   }, [
     activeTask,
+    activeRevisionEvent,
     run.completedInTarget,
     run.currentRun,
     run.targetPomodoros,
+    setRevisionEvents,
     setTaskPomodoroMemory,
     timerMode,
     timerRemaining,
@@ -832,6 +1138,132 @@ function App() {
     [layouts.todo, setTaskWindowLayouts, taskWindows],
   )
 
+  const closeRevisionPlanner = useCallback(() => {
+    setRevisionPlannerOpen(false)
+    setMobileWorkspacePage((current) => (current === 'planner' ? null : current))
+  }, [])
+
+  const closeFriendsPage = useCallback(() => {
+    setFriendsPageOpen(false)
+    setMobileWorkspacePage((current) => (current === 'friends' ? null : current))
+  }, [])
+
+  const handleDockWidgetToggle = useCallback(
+    (id: WidgetId) => {
+      if (isMobileWorkspace) {
+        if (mobileWorkspacePage === id && layouts[id].visible) {
+          hideWidget(id)
+          setMobileWorkspacePage(null)
+          return
+        }
+
+        setMobileWorkspacePage(id)
+        setRevisionPlannerOpen(false)
+        setFriendsPageOpen(false)
+        focusWidget(id)
+        return
+      }
+
+      if (layouts[id].visible) {
+        hideWidget(id)
+        return
+      }
+
+      focusWidget(id)
+    },
+    [
+      focusWidget,
+      hideWidget,
+      isMobileWorkspace,
+      layouts,
+      mobileWorkspacePage,
+    ],
+  )
+
+  const handleDockTaskWindowToggle = useCallback(
+    (id: string) => {
+      const page = taskMobilePage(id)
+      const layout = taskWindowLayouts[id]
+
+      if (isMobileWorkspace) {
+        if (mobileWorkspacePage === page && layout?.visible) {
+          hideTaskWindow(id)
+          setMobileWorkspacePage(null)
+          return
+        }
+
+        setMobileWorkspacePage(page)
+        setRevisionPlannerOpen(false)
+        setFriendsPageOpen(false)
+        focusTaskWindow(id)
+        return
+      }
+
+      if (layout?.visible) {
+        hideTaskWindow(id)
+        return
+      }
+
+      focusTaskWindow(id)
+    },
+    [
+      focusTaskWindow,
+      hideTaskWindow,
+      isMobileWorkspace,
+      mobileWorkspacePage,
+      taskWindowLayouts,
+    ],
+  )
+
+  const handleRevisionPlannerDockToggle = useCallback(() => {
+    if (isMobileWorkspace) {
+      if (revisionPlannerOpen && mobileWorkspacePage === 'planner') {
+        closeRevisionPlanner()
+        return
+      }
+
+      setMobileWorkspacePage('planner')
+      setFriendsPageOpen(false)
+      setRevisionPlannerOpen(true)
+      return
+    }
+
+    if (revisionPlannerOpen) {
+      setRevisionPlannerOpen(false)
+      return
+    }
+
+    setFriendsPageOpen(false)
+    setRevisionPlannerOpen(true)
+  }, [
+    closeRevisionPlanner,
+    isMobileWorkspace,
+    mobileWorkspacePage,
+    revisionPlannerOpen,
+  ])
+
+  const handleFriendsPageDockToggle = useCallback(() => {
+    if (isMobileWorkspace) {
+      if (friendsPageOpen && mobileWorkspacePage === 'friends') {
+        closeFriendsPage()
+        return
+      }
+
+      setMobileWorkspacePage('friends')
+      setRevisionPlannerOpen(false)
+      setFriendsPageOpen(true)
+      return
+    }
+
+    if (friendsPageOpen) {
+      setFriendsPageOpen(false)
+      return
+    }
+
+    setRevisionPlannerOpen(false)
+    setFriendsPageOpen(true)
+  }, [closeFriendsPage, friendsPageOpen, isMobileWorkspace, mobileWorkspacePage])
+
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length) {
       return
@@ -923,15 +1355,40 @@ function App() {
     playStreakUnlockCue({ date: today, taskLabel })
   }, [playStreakUnlockCue])
 
+  const completeRevisionEvent = useCallback(
+    (eventId: string, timeSpentSeconds = 0) => {
+      const completedAt = Date.now()
+
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((event) =>
+          event.id === eventId
+            ? {
+                ...event,
+                status: 'done',
+                completedPomodoros: event.requiredPomodoros,
+                completedAt: event.completedAt ?? completedAt,
+                timeSpentSeconds: Math.max(
+                  event.timeSpentSeconds,
+                  timeSpentSeconds,
+                ),
+              }
+            : event,
+        ),
+      )
+    },
+    [setRevisionEvents],
+  )
+
   const commitTodos = useCallback(
     (nextTodos: TodoItem[], recordManualCompletion = false) => {
       const normalized = normalizeTodos(nextTodos)
+      const completedTasks = normalized.filter((todo) => {
+        const before = todos.find((item) => item.id === todo.id)
+        return before && !before.completed && todo.completed
+      })
 
       if (recordManualCompletion) {
-        const completedTask = normalized.find((todo) => {
-          const before = todos.find((item) => item.id === todo.id)
-          return before && !before.completed && todo.completed
-        })
+        const completedTask = completedTasks[0]
 
         if (completedTask) {
           recordActivity()
@@ -939,9 +1396,15 @@ function App() {
         }
       }
 
+      completedTasks.forEach((task) => {
+        if (task.revisionEventId) {
+          completeRevisionEvent(task.revisionEventId)
+        }
+      })
+
       setTodos(normalized)
     },
-    [recordActivity, setTodos, todos, triggerTaskUnlock],
+    [completeRevisionEvent, recordActivity, setTodos, todos, triggerTaskUnlock],
   )
 
   const updateDailyGoal = (value: number) => {
@@ -1078,6 +1541,7 @@ function App() {
     const now = Date.now()
     const id = `task-window-${now}`
     const title = copy.todo.newWindowTitle(taskWindows.length + 1)
+    const emoji = taskWindowEmojiForIndex(taskWindows.length)
     const rank = taskWindows.length
       ? Math.max(...taskWindows.map((window) => window.rank)) + 1
       : 1
@@ -1088,6 +1552,7 @@ function App() {
         {
           id,
           title,
+          emoji,
           rank,
           createdAt: now,
           updatedAt: now,
@@ -1101,6 +1566,7 @@ function App() {
         {
           id,
           title,
+          emoji,
           rank,
           createdAt: now,
           updatedAt: now,
@@ -1122,6 +1588,7 @@ function App() {
         },
       }
     })
+    setMobileWorkspacePage(taskMobilePage(id))
   }
 
   const renameTaskWindow = (id: string, title: string) => {
@@ -1135,6 +1602,16 @@ function App() {
       normalizeTaskWindows(current).map((window) =>
         window.id === id
           ? { ...window, title: trimmed, updatedAt: Date.now() }
+          : window,
+      ),
+    )
+  }
+
+  const changeTaskWindowEmoji = (id: string, emoji: string) => {
+    setTaskWindows((current) =>
+      normalizeTaskWindows(current).map((window) =>
+        window.id === id
+          ? { ...window, emoji: emoji.trim(), updatedAt: Date.now() }
           : window,
       ),
     )
@@ -1169,7 +1646,7 @@ function App() {
     })
   }
 
-  const nextManualRank = (windowId = DEFAULT_TASK_WINDOW_ID, fallback = 0) => {
+  const nextManualRank = useCallback((windowId = DEFAULT_TASK_WINDOW_ID, fallback = 0) => {
     const ranks = todos
       .filter(
         (todo) =>
@@ -1179,7 +1656,7 @@ function App() {
       .map((todo) => todo.rank)
 
     return ranks.length ? Math.min(...ranks) - 1 : fallback
-  }
+  }, [todos])
 
   const addTask = (
     windowId: string,
@@ -1405,6 +1882,14 @@ function App() {
       }))
     }
 
+    setRevisionEvents((current) =>
+      normalizeRevisionEvents(current).map((event) =>
+        event.status === 'active' && event.completedPomodoros < event.requiredPomodoros
+          ? { ...event, status: 'pending' }
+          : event,
+      ),
+    )
+
     const storedMemory = taskPomodoroMemory[taskId]
     const memory =
       !storedMemory && task.completedPomodoros === 0
@@ -1439,6 +1924,7 @@ function App() {
     setTimerMode,
     setTimerRemaining,
     setTimerRunning,
+    setRevisionEvents,
     taskPomodoroMemory,
     timerMode,
     timerRemaining,
@@ -1494,6 +1980,13 @@ function App() {
         active: false,
       })),
     )
+    setRevisionEvents((current) =>
+      normalizeRevisionEvents(current).map((event) =>
+        event.status === 'active' && event.completedPomodoros < event.requiredPomodoros
+          ? { ...event, status: 'pending' }
+          : event,
+      ),
+    )
     const freeTarget = clampPomodoros(pomodoroRun.targetPomodoros)
 
     setPomodoroRun((current) => ({
@@ -1513,6 +2006,7 @@ function App() {
     run.currentRun,
     run.targetPomodoros,
     setPomodoroRun,
+    setRevisionEvents,
     setTaskPomodoroMemory,
     setTimerMode,
     setTimerRemaining,
@@ -1612,6 +2106,19 @@ function App() {
     })
 
     if (!activeTask) {
+      if (activeRevisionEvent) {
+        setRevisionEvents((current) =>
+          normalizeRevisionEvents(current).map((event) =>
+            event.id === activeRevisionEvent.id
+              ? {
+                  ...event,
+                  requiredPomodoros: Math.max(nextTarget, event.completedPomodoros),
+                }
+              : event,
+          ),
+        )
+      }
+
       return
     }
 
@@ -1635,7 +2142,7 @@ function App() {
         }
       }),
     )
-  }, [activeTask, changePomodoroRun, commitTodos, run, todos])
+  }, [activeRevisionEvent, activeTask, changePomodoroRun, commitTodos, run, setRevisionEvents, todos])
 
   const toggleTask = (taskId: string) => {
     commitTodos(
@@ -1661,12 +2168,16 @@ function App() {
     )
   }
 
-  const deleteTasks = (taskIds: string[]) => {
+  const deleteTasks = useCallback((taskIds: string[]) => {
     const ids = new Set(taskIds)
 
     if (!ids.size) {
       return
     }
+
+    const deletedLinkedEventIds = todos.flatMap((todo) =>
+      ids.has(todo.id) && todo.revisionEventId ? [todo.revisionEventId] : [],
+    )
 
     const remaining = todos.filter((todo) => !ids.has(todo.id))
     const activeExists = remaining.some((todo) => todo.active && !todo.completed)
@@ -1698,14 +2209,482 @@ function App() {
               : remaining
           })(),
     )
-  }
+
+    if (deletedLinkedEventIds.length) {
+      const linkedIds = new Set(deletedLinkedEventIds)
+
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((event) =>
+          linkedIds.has(event.id) && event.status !== 'done'
+            ? {
+                ...event,
+                status: 'pending',
+                linkedTodoId: undefined,
+              }
+            : event,
+        ),
+      )
+    }
+  }, [commitTodos, setRevisionEvents, setTaskPomodoroMemory, todos])
 
   const deleteTask = (taskId: string) => {
     deleteTasks([taskId])
   }
 
+  const saveRevisionCourse = useCallback(
+    (course: RevisionCourse) => {
+      const nextCourses = normalizeRevisionCourses([
+        ...revisionCourses.filter((item) => item.id !== course.id),
+        course,
+      ])
+
+      setRevisionCourses(nextCourses)
+      setRevisionEvents((current) =>
+        buildRevisionEventsForCourses(
+          nextCourses,
+          revisionMethods,
+          normalizeRevisionEvents(current),
+        ),
+      )
+    },
+    [
+      revisionCourses,
+      revisionMethods,
+      setRevisionCourses,
+      setRevisionEvents,
+    ],
+  )
+
+  const deleteRevisionCourse = (courseId: string) => {
+    const linkedTaskIds = revisionEvents.flatMap((event) =>
+      event.courseId === courseId && event.linkedTodoId
+        ? [event.linkedTodoId]
+        : [],
+    )
+
+    setRevisionCourses((current) =>
+      normalizeRevisionCourses(current).filter((course) => course.id !== courseId),
+    )
+    setRevisionEvents((current) =>
+      normalizeRevisionEvents(current).filter((event) => event.courseId !== courseId),
+    )
+
+    if (linkedTaskIds.length) {
+      deleteTasks(linkedTaskIds)
+    }
+  }
+
+  const deleteRevisionEvent = (eventId: string) => {
+    const event = revisionEvents.find((item) => item.id === eventId)
+
+    setRevisionEvents((current) =>
+      normalizeRevisionEvents(current).filter((item) => item.id !== eventId),
+    )
+
+    if (event?.linkedTodoId) {
+      deleteTasks([event.linkedTodoId])
+    }
+  }
+
+  const saveRevisionMethod = useCallback(
+    (method: RevisionMethod) => {
+      const customMethods = revisionMethods.filter(
+        (item) => !item.builtIn && item.id !== method.id,
+      )
+      const nextMethods = normalizeRevisionMethods([...customMethods, method])
+
+      setRevisionMethods(nextMethods)
+      setRevisionEvents((current) =>
+        buildRevisionEventsForCourses(
+          revisionCourses,
+          nextMethods,
+          normalizeRevisionEvents(current),
+        ),
+      )
+    },
+    [
+      revisionCourses,
+      revisionMethods,
+      setRevisionEvents,
+      setRevisionMethods,
+    ],
+  )
+
+  const deleteRevisionMethod = useCallback(
+    (methodId: string) => {
+      const nextMethods = normalizeRevisionMethods(
+        revisionMethods.filter((method) => !method.builtIn && method.id !== methodId),
+      )
+      const nextCourses = revisionCourses.map((course) =>
+        course.methodId === methodId
+          ? { ...course, methodId: null, updatedAt: Date.now() }
+          : course,
+      )
+
+      setRevisionMethods(nextMethods)
+      setRevisionCourses(nextCourses)
+      setRevisionEvents((current) =>
+        buildRevisionEventsForCourses(
+          nextCourses,
+          nextMethods,
+          normalizeRevisionEvents(current),
+        ),
+      )
+    },
+    [
+      revisionCourses,
+      revisionMethods,
+      setRevisionCourses,
+      setRevisionEvents,
+      setRevisionMethods,
+    ],
+  )
+
+  const updateRevisionEvent = useCallback(
+    (
+      eventId: string,
+      patch: Partial<
+        Pick<
+          RevisionEvent,
+          'priority' | 'difficulty' | 'requiredPomodoros' | 'completedPomodoros'
+        >
+      >,
+    ) => {
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((event) => {
+          if (event.id !== eventId) {
+            return event
+          }
+
+          const requiredPomodoros =
+            patch.requiredPomodoros === undefined
+              ? event.requiredPomodoros
+              : clampPomodoros(patch.requiredPomodoros)
+          const completedPomodoros = Math.min(
+            Math.max(
+              patch.completedPomodoros === undefined
+                ? event.completedPomodoros
+                : patch.completedPomodoros,
+              0,
+            ),
+            requiredPomodoros,
+          )
+          const completed = completedPomodoros >= requiredPomodoros
+
+          return {
+            ...event,
+            ...patch,
+            requiredPomodoros,
+            completedPomodoros,
+            status: completed ? 'done' : event.status === 'done' ? 'pending' : event.status,
+            completedAt: completed ? event.completedAt ?? Date.now() : null,
+          }
+        }),
+      )
+    },
+    [setRevisionEvents],
+  )
+
+  const rescheduleRevisionEvent = useCallback(
+    (eventId: string, scheduledDate: string, scheduledTime: string | null) => {
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((event) =>
+          event.id === eventId
+            ? {
+                ...event,
+                scheduledDate,
+                scheduledTime,
+              }
+            : event,
+        ),
+      )
+    },
+    [setRevisionEvents],
+  )
+
+  const startRevisionEvent = useCallback(
+    (eventId: string) => {
+      const event = revisionEvents.find((item) => item.id === eventId)
+
+      if (!event || event.status === 'done') {
+        return
+      }
+
+      const sameActiveRevision = activeRevisionEvent?.id === event.id
+
+      if (activeTask) {
+        setTaskPomodoroMemory((current) => ({
+          ...current,
+          [activeTask.id]: {
+            mode: timerMode,
+            remaining: timerRemaining,
+            targetPomodoros: run.targetPomodoros,
+            completedInTarget: run.completedInTarget,
+            currentRun: run.currentRun,
+          },
+        }))
+      }
+
+      commitTodos(
+        todos.map((todo) => ({
+          ...todo,
+          active: false,
+        })),
+      )
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((item) => {
+          if (item.id === event.id) {
+            return { ...item, status: 'active' }
+          }
+
+          return item.status === 'active' && item.completedPomodoros < item.requiredPomodoros
+            ? { ...item, status: 'pending' }
+            : item
+        }),
+      )
+      setPomodoroRun((current) => ({
+        ...current,
+        targetPomodoros: event.requiredPomodoros,
+        completedInTarget: event.completedPomodoros,
+        currentRun: event.completedPomodoros,
+      }))
+      setTimerMode('focus')
+
+      if (!sameActiveRevision || timerMode !== 'focus' || timerRemaining <= 0) {
+        setTimerRemaining(timerSeconds('focus', timerSettings))
+      }
+
+      setTimerRunning(true)
+    },
+    [
+      activeRevisionEvent,
+      activeTask,
+      commitTodos,
+      revisionEvents,
+      run.completedInTarget,
+      run.currentRun,
+      run.targetPomodoros,
+      setPomodoroRun,
+      setRevisionEvents,
+      setTaskPomodoroMemory,
+      setTimerMode,
+      setTimerRemaining,
+      setTimerRunning,
+      timerMode,
+      timerRemaining,
+      timerSettings,
+      todos,
+    ],
+  )
+
+  const pauseRevisionEvent = useCallback(
+    (eventId: string) => {
+      if (activeRevisionEvent?.id !== eventId) {
+        return
+      }
+
+      setTimerRunning(false)
+    },
+    [activeRevisionEvent, setTimerRunning],
+  )
+
+  const markRevisionEventDone = useCallback(
+    (eventId: string) => {
+      const event = revisionEvents.find((item) => item.id === eventId)
+      const course = event
+        ? revisionCourses.find((item) => item.id === event.courseId)
+        : undefined
+
+      if (!event || event.status === 'done') {
+        return
+      }
+
+      completeRevisionEvent(eventId)
+      recordActivity()
+      triggerTaskUnlock(course?.title)
+      setPomodoroRun((current) => recordRevisionManualCompletionReward(current))
+
+      if (activeRevisionEvent?.id === eventId) {
+        setTimerRunning(false)
+      }
+
+      if (event.linkedTodoId) {
+        commitTodos(
+          todos.map((todo) =>
+            todo.id === event.linkedTodoId
+              ? {
+                  ...todo,
+                  completed: true,
+                  active: false,
+                  completedPomodoros: todo.requiredPomodoros,
+                  completedAt: todo.completedAt ?? Date.now(),
+                  updatedAt: Date.now(),
+                }
+              : todo,
+          ),
+        )
+      }
+    },
+    [
+      activeRevisionEvent,
+      commitTodos,
+      completeRevisionEvent,
+      recordActivity,
+      revisionCourses,
+      revisionEvents,
+      setPomodoroRun,
+      setTimerRunning,
+      todos,
+      triggerTaskUnlock,
+    ],
+  )
+
+  const changeRevisionSettings = useCallback(
+    (patch: Partial<RevisionSettings>) => {
+      setRevisionSettings({
+        ...revisionSettings,
+        ...patch,
+      })
+    },
+    [revisionSettings, setRevisionSettings],
+  )
+
+  const performRevisionGoogleCalendarSync = useCallback(
+    async (accessToken = googleCalendarTokenRef.current) => {
+      if (!isGoogleCalendarConfigured()) {
+        setRevisionGoogleCalendar((current) => ({
+          ...normalizeGoogleCalendarSync(current),
+          lastError: copy.revisions.googleCalendarConfiguredNeeded,
+        }))
+        return
+      }
+
+      if (!accessToken) {
+        setGoogleCalendarSessionConnected(false)
+        setRevisionGoogleCalendar((current) => ({
+          ...normalizeGoogleCalendarSync(current),
+          enabled: true,
+          lastError: copy.revisions.googleCalendarNeedsConnect,
+        }))
+        return
+      }
+
+      try {
+        const nextState = await syncRevisionEventsToGoogleCalendar({
+          state: revisionGoogleCalendar,
+          events: revisionEvents,
+          courses: revisionCourses,
+          accessToken,
+          timezone: getBrowserTimezone(),
+        })
+
+        setRevisionGoogleCalendar(nextState)
+      } catch (error) {
+        setRevisionGoogleCalendar((current) => ({
+          ...normalizeGoogleCalendarSync(current),
+          enabled: true,
+          lastError: error instanceof Error ? error.message : 'calendar_sync_failed',
+        }))
+      }
+    },
+    [
+      copy.revisions.googleCalendarConfiguredNeeded,
+      copy.revisions.googleCalendarNeedsConnect,
+      revisionCourses,
+      revisionEvents,
+      revisionGoogleCalendar,
+      setRevisionGoogleCalendar,
+    ],
+  )
+
+  const connectRevisionGoogleCalendar = useCallback(async () => {
+    try {
+      const token = await requestGoogleCalendarAccessToken()
+      googleCalendarTokenRef.current = token
+      setGoogleCalendarSessionConnected(true)
+      setRevisionGoogleCalendar((current) => ({
+        ...normalizeGoogleCalendarSync(current),
+        enabled: true,
+        lastError: null,
+      }))
+      await performRevisionGoogleCalendarSync(token)
+    } catch (error) {
+      setGoogleCalendarSessionConnected(false)
+      setRevisionGoogleCalendar((current) => ({
+        ...normalizeGoogleCalendarSync(current),
+        lastError: error instanceof Error ? error.message : 'calendar_connect_failed',
+      }))
+    }
+  }, [performRevisionGoogleCalendarSync, setRevisionGoogleCalendar])
+
+  const syncRevisionGoogleCalendarNow = useCallback(async () => {
+    if (!googleCalendarTokenRef.current) {
+      await connectRevisionGoogleCalendar()
+      return
+    }
+
+    await performRevisionGoogleCalendarSync()
+  }, [connectRevisionGoogleCalendar, performRevisionGoogleCalendarSync])
+
+  useEffect(() => {
+    window.clearTimeout(googleCalendarSyncTimerRef.current)
+
+    if (
+      !revisionGoogleCalendar.enabled ||
+      !googleCalendarTokenRef.current ||
+      !isGoogleCalendarConfigured()
+    ) {
+      return
+    }
+
+    googleCalendarSyncTimerRef.current = window.setTimeout(() => {
+      void performRevisionGoogleCalendarSync()
+    }, 1_200)
+
+    return () => {
+      window.clearTimeout(googleCalendarSyncTimerRef.current)
+    }
+  }, [
+    performRevisionGoogleCalendarSync,
+    revisionCourses,
+    revisionEvents,
+    revisionGoogleCalendar.enabled,
+  ])
+
   const completeFocusSession = useCallback(() => {
     recordActivity()
+
+    if (activeRevisionEvent) {
+      const nextCompletedPomodoros = Math.min(
+        activeRevisionEvent.completedPomodoros + 1,
+        activeRevisionEvent.requiredPomodoros,
+      )
+      const completed =
+        nextCompletedPomodoros >= activeRevisionEvent.requiredPomodoros
+
+      setRevisionEvents((current) =>
+        normalizeRevisionEvents(current).map((event) =>
+          event.id === activeRevisionEvent.id
+            ? {
+                ...event,
+                completedPomodoros: nextCompletedPomodoros,
+                status: completed ? 'done' : event.status,
+                completedAt: completed ? event.completedAt ?? Date.now() : null,
+              }
+            : event,
+        ),
+      )
+
+      if (completed) {
+        triggerTaskUnlock(activeRevisionCourse?.title)
+        setPomodoroRun((current) => ({
+          ...current,
+          targetPomodoros: Math.max(current.targetPomodoros, 1),
+        }))
+      }
+
+      return
+    }
 
     if (!activeTask) {
       return
@@ -1721,7 +2700,72 @@ function App() {
         targetPomodoros: Math.max(current.targetPomodoros, 1),
       }))
     }
-  }, [activeTask, recordActivity, setPomodoroRun, triggerTaskUnlock, updateTaskPomodoro])
+  }, [
+    activeRevisionCourse,
+    activeRevisionEvent,
+    activeTask,
+    recordActivity,
+    setPomodoroRun,
+    setRevisionEvents,
+    triggerTaskUnlock,
+    updateTaskPomodoro,
+  ])
+
+  const nextSessionToday = dateKey()
+  const nextSessionTodayRevisions = todayRevisionEvents(
+    revisionEvents,
+    nextSessionToday,
+  )
+  const nextSessionDueRevisions = revisionsDueToday(
+    nextSessionTodayRevisions,
+    nextSessionToday,
+  )
+  const nextRevisionEvent =
+    activeRevisionEvent ?? nextSessionDueRevisions[0] ?? null
+  const nextRevisionCourse = nextRevisionEvent
+    ? revisionCourses.find((course) => course.id === nextRevisionEvent.courseId)
+    : undefined
+  const nextRevisionLabel = nextRevisionEvent
+    ? nextRevisionCourse
+      ? `${nextRevisionCourse.title} - ${revisionOffsetLabel(
+          nextRevisionCourse,
+          nextRevisionEvent,
+          copy.revisions.revisionPrefix,
+        )}`
+      : copy.revisions.courseName
+    : ''
+  const receivedFriendRequestCount = social.invites.filter(
+    (invite) =>
+      invite.status === 'pending' && invite.recipientId === cloudSync.user?.id,
+  ).length
+  const revisionDockBadgeLabel = nextRevisionLabel || copy.revisions.todayEmpty
+  const friendsDockBadgeLabel =
+    receivedFriendRequestCount > 0
+      ? copy.friends.pendingReceived
+      : copy.friends.title
+  const taskWindowBadges = useMemo(
+    () =>
+      displayedTaskWindows.reduce<Record<string, { count: number; label?: string }>>(
+        (badges, taskWindow) => {
+          const openCount = todos.filter(
+            (todo) =>
+              !todo.completed &&
+              (todo.windowId ?? DEFAULT_TASK_WINDOW_ID) === taskWindow.id,
+          ).length
+
+          if (openCount > 0) {
+            badges[taskWindow.id] = {
+              count: openCount,
+              label: copy.todo.taskBadge(openCount),
+            }
+          }
+
+          return badges
+        },
+        {},
+      ),
+    [copy.todo, displayedTaskWindows, todos],
+  )
 
   const renderTaskWindow = (taskWindow: TaskWindow) => {
     const windowTodos = todos.filter(
@@ -1733,11 +2777,14 @@ function App() {
       <TodoWidget
         copy={copy.todo}
         windowTitle={taskWindow.title}
+        windowEmoji={taskWindow.emoji ?? taskWindowEmojiForIndex(taskWindow.rank)}
+        windowEmojiOptions={TASK_WINDOW_EMOJIS}
         canDeleteWindow={taskWindow.deletable}
         todos={windowTodos}
         activeTaskId={activeTask?.id}
         isTimerRunning={timerRunning}
         onRenameWindow={(title) => renameTaskWindow(taskWindow.id, title)}
+        onEmojiChange={(emoji) => changeTaskWindowEmoji(taskWindow.id, emoji)}
         onDeleteWindow={() => deleteTaskWindow(taskWindow.id)}
         onAddTask={(text, requiredPomodoros, priority, difficulty) =>
           addTask(taskWindow.id, text, requiredPomodoros, priority, difficulty)
@@ -1766,7 +2813,12 @@ function App() {
             isRunning={timerRunning}
             run={run}
             timerSettings={timerSettings}
-            activeTaskLabel={activeTask?.text}
+            activeTaskLabel={
+              activeTask?.text ??
+              (activeRevisionCourse
+                ? copy.revisions.linkedTaskLabel(activeRevisionCourse.title)
+                : undefined)
+            }
             onModeChange={setTimerMode}
             onRemainingChange={setTimerRemaining}
             onRunningChange={setTimerRunning}
@@ -1781,6 +2833,24 @@ function App() {
           displayedTaskWindows.find((window) => window.id === DEFAULT_TASK_WINDOW_ID) ??
             displayedTaskWindows[0],
         )
+      case 'revisionDashboard':
+        return (
+          <RevisionDashboardWidget
+            copy={copy.revisions}
+            todoCopy={copy.todo}
+            courses={revisionCourses}
+            events={revisionEvents}
+            activeRevisionEventId={activeRevisionEvent?.id}
+            isTimerRunning={timerRunning}
+            onStartEvent={startRevisionEvent}
+            onPauseEvent={pauseRevisionEvent}
+            onMarkDone={markRevisionEventDone}
+            onUpdateEvent={updateRevisionEvent}
+            onOpenPlanner={handleRevisionPlannerDockToggle}
+          />
+        )
+      case 'friends':
+        return null
       case 'youtube':
         return <YoutubeWidget copy={copy.youtube} />
       case 'backgrounds':
@@ -1798,8 +2868,126 @@ function App() {
     }
   }
 
+  const dockLayouts = useMemo(() => {
+    if (!isMobileWorkspace) {
+      return layouts
+    }
+
+    return WIDGET_ORDER.reduce(
+      (nextLayouts, id) => {
+        nextLayouts[id] = {
+          ...layouts[id],
+          visible: mobileWorkspacePage === id && layouts[id].visible,
+        }
+        return nextLayouts
+      },
+      {} as Record<WidgetId, WidgetLayout>,
+    )
+  }, [isMobileWorkspace, layouts, mobileWorkspacePage])
+
+  const dockTaskWindowLayouts = useMemo(() => {
+    if (!isMobileWorkspace) {
+      return taskWindowLayouts
+    }
+
+    return displayedTaskWindows.reduce(
+      (nextLayouts, taskWindow) => {
+        const layout = taskWindowLayouts[taskWindow.id]
+
+        if (layout) {
+          nextLayouts[taskWindow.id] = {
+            ...layout,
+            visible:
+              mobileWorkspacePage === taskMobilePage(taskWindow.id) &&
+              layout.visible,
+          }
+        }
+
+        return nextLayouts
+      },
+      {} as Record<string, WidgetLayout>,
+    )
+  }, [
+    displayedTaskWindows,
+    isMobileWorkspace,
+    mobileWorkspacePage,
+    taskWindowLayouts,
+  ])
+
+  const visibleStaticWidgetIds = useMemo(
+    () =>
+      isMobileWorkspace
+        ? STATIC_WIDGET_ORDER.filter(
+            (id) => mobileWorkspacePage === id && layouts[id].visible,
+          )
+        : STATIC_WIDGET_ORDER,
+    [isMobileWorkspace, layouts, mobileWorkspacePage],
+  )
+
+  const visibleTaskWindows = useMemo(
+    () =>
+      isMobileWorkspace
+        ? displayedTaskWindows.filter((taskWindow) => {
+            const layout = taskWindowLayouts[taskWindow.id]
+            return (
+              mobileWorkspacePage === taskMobilePage(taskWindow.id) &&
+              layout?.visible
+            )
+          })
+        : displayedTaskWindows,
+    [
+      displayedTaskWindows,
+      isMobileWorkspace,
+      mobileWorkspacePage,
+      taskWindowLayouts,
+    ],
+  )
+  const revisionPlannerVisible =
+    revisionPlannerOpen && (!isMobileWorkspace || mobileWorkspacePage === 'planner')
+  const friendsPageVisible =
+    friendsPageOpen && (!isMobileWorkspace || mobileWorkspacePage === 'friends')
+  const timerDuration = Math.max(timerSeconds(timerMode, timerSettings), 1)
+  const miniPomodoroProgress = Math.round(
+    (Math.min(Math.max(timerDuration - timerRemaining, 0), timerDuration) /
+      timerDuration) *
+      100,
+  )
+  const pomodoroPageVisible = isMobileWorkspace
+    ? mobileWorkspacePage === 'pomodoro' &&
+      layouts.pomodoro.visible &&
+      !revisionPlannerVisible &&
+      !friendsPageVisible
+    : layouts.pomodoro.visible
+  const hasPomodoroSession =
+    timerRunning ||
+    timerRemaining < timerDuration ||
+    Boolean(activeTask) ||
+    Boolean(activeRevisionEvent) ||
+    run.currentRun > 0 ||
+    run.completedInTarget > 0
+  const showMiniPomodoro =
+    !pomodoroPageVisible && hasPomodoroSession && !settingsOpen
+  const openMiniPomodoro = useCallback(() => {
+    if (isMobileWorkspace) {
+      setMobileWorkspacePage('pomodoro')
+      setRevisionPlannerOpen(false)
+      setFriendsPageOpen(false)
+    }
+
+    focusWidget('pomodoro')
+  }, [focusWidget, isMobileWorkspace])
+  const toggleMiniPomodoroRunning = useCallback(() => {
+    setTimerRunning((current) => (timerRemaining > 0 ? !current : false))
+  }, [setTimerRunning, timerRemaining])
+
   return (
-    <div className="app-shell">
+    <div
+      className={[
+        'app-shell',
+        highContrast ? 'is-high-contrast' : '',
+        isMobileWorkspace ? 'is-mobile-page-mode' : '',
+      ].filter(Boolean).join(' ')}
+    >
       <BackgroundLayer
         background={activeBackground}
         dim={backgroundDim}
@@ -1823,6 +3011,21 @@ function App() {
         cloudUser={cloudSync.user}
         cloudStatus={cloudSync.status}
         cloudConflict={cloudSync.conflict}
+        miniPomodoro={
+          showMiniPomodoro ? (
+            <MiniPomodoroButton
+              mode={timerMode}
+              modeLabel={copy.pomodoro.modes[timerMode]}
+              remaining={timerRemaining}
+              progress={miniPomodoroProgress}
+              isRunning={timerRunning}
+              label={`${copy.widgets.pomodoro} - ${formatCompactTime(timerRemaining)}`}
+              toggleLabel={timerRunning ? copy.pomodoro.pause : copy.pomodoro.start}
+              onOpen={openMiniPomodoro}
+              onToggleRunning={toggleMiniPomodoroRunning}
+            />
+          ) : null
+        }
         onOpenSettings={() => setSettingsOpen(true)}
         onCloudSignIn={cloudSync.signIn}
         onCloudSignOut={cloudSync.signOut}
@@ -1847,6 +3050,7 @@ function App() {
         memoryNotice={memoryNotice}
         backgroundDim={backgroundDim}
         particlesEnabled={particlesEnabled}
+        highContrast={highContrast}
         onClose={() => setSettingsOpen(false)}
         onLanguageChange={setLanguageState}
         onResetLayout={resetLayout}
@@ -1858,24 +3062,94 @@ function App() {
         onTimerSettingChange={updateTimerSetting}
         onBackgroundDimChange={setBackgroundDim}
         onParticlesEnabledChange={setParticlesEnabled}
+        onHighContrastChange={setHighContrast}
         onExportData={exportData}
         onImportData={importData}
       />
+      {revisionPlannerVisible ? (
+        <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
+          <RevisionPlannerPage
+            copy={copy.revisions}
+            todoCopy={copy.todo}
+            language={language}
+            courses={revisionCourses}
+            events={revisionEvents}
+            methods={revisionMethods}
+            settings={revisionSettings}
+            googleCalendar={revisionGoogleCalendar}
+            googleCalendarConfigured={isGoogleCalendarConfigured()}
+            googleCalendarSessionConnected={googleCalendarSessionConnected}
+            onClose={closeRevisionPlanner}
+            onSettingsChange={changeRevisionSettings}
+            onSaveCourse={saveRevisionCourse}
+            onDeleteCourse={deleteRevisionCourse}
+            onDeleteEvent={deleteRevisionEvent}
+            onStartEvent={startRevisionEvent}
+            onMarkDone={markRevisionEventDone}
+            onConnectGoogleCalendar={connectRevisionGoogleCalendar}
+            onSyncGoogleCalendar={syncRevisionGoogleCalendarNow}
+            onRescheduleEvent={rescheduleRevisionEvent}
+            onUpdateEvent={updateRevisionEvent}
+            onSaveMethod={saveRevisionMethod}
+            onDeleteMethod={deleteRevisionMethod}
+          />
+        </Suspense>
+      ) : null}
+      {friendsPageVisible ? (
+        <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
+          <FriendsPage
+            copy={copy.friends}
+            flameCopy={copy.streak}
+            user={cloudSync.user}
+            profile={social.profile}
+            friends={social.friends}
+            invites={social.invites}
+            leaderboard={social.leaderboard}
+            lookup={social.lookup}
+            loading={social.loading}
+            message={social.message}
+            onClose={closeFriendsPage}
+            onRefresh={social.refresh}
+            onSearchCode={social.searchFriendCode}
+            onSendInviteByCode={social.sendInviteByCode}
+            onRegenerateCode={social.regenerateCode}
+            onAcceptInvite={social.acceptInvite}
+            onDeclineInvite={social.declineInvite}
+            onCancelInvite={social.cancelInvite}
+            onClearLookup={social.clearLookup}
+          />
+        </Suspense>
+      ) : null}
       <Dock
         labels={widgetLabels}
         taskWindows={displayedTaskWindows}
         label={copy.dock.label}
-        layouts={layouts}
-        taskWindowLayouts={taskWindowLayouts}
+        layouts={dockLayouts}
+        taskWindowLayouts={dockTaskWindowLayouts}
+        badges={{
+          revisionDashboard: {
+            count: nextSessionDueRevisions.length,
+            label: revisionDockBadgeLabel,
+          },
+          friends: {
+            count: receivedFriendRequestCount,
+            label: friendsDockBadgeLabel,
+          },
+          taskWindows: taskWindowBadges,
+        }}
         addTaskWindowLabel={copy.todo.addWindow}
-        onToggle={toggleWidget}
-        onFocus={focusWidget}
-        onToggleTaskWindow={toggleTaskWindow}
-        onFocusTaskWindow={focusTaskWindow}
+        revisionPlannerLabel={copy.revisions.plannerOpen}
+        revisionPlannerOpen={revisionPlannerOpen}
+        friendsPageLabel={copy.friends.title}
+        friendsPageOpen={friendsPageOpen}
+        onToggle={handleDockWidgetToggle}
+        onToggleTaskWindow={handleDockTaskWindowToggle}
         onAddTaskWindow={addTaskWindow}
+        onOpenRevisionPlanner={handleRevisionPlannerDockToggle}
+        onOpenFriendsPage={handleFriendsPageDockToggle}
       />
       <main className="workspace" aria-label={copy.app.workspace}>
-        {STATIC_WIDGET_ORDER.map((id) => (
+        {visibleStaticWidgetIds.map((id) => (
           <WidgetFrame
             key={id}
             title={widgetLabels[id]}
@@ -1889,7 +3163,7 @@ function App() {
             {renderWidget(id)}
           </WidgetFrame>
         ))}
-        {displayedTaskWindows.map((taskWindow) => (
+        {visibleTaskWindows.map((taskWindow) => (
           <WidgetFrame
             key={taskWindow.id}
             title={taskWindow.title}

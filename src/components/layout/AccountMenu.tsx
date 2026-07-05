@@ -14,6 +14,7 @@ import type { AppCopy } from '../../lib/i18n'
 import type {
   AuthUserProfile,
   CloudConflictState,
+  CloudSnapshot,
   CloudSyncStatus,
 } from '../../types/app'
 
@@ -71,6 +72,48 @@ function StatusIcon({ phase }: { phase: CloudSyncStatus['phase'] }) {
   return <Cloud size={15} strokeWidth={1.9} />
 }
 
+type SnapshotSummary = {
+  updatedMs: number
+  updatedLabel: string
+  taskCount: number
+  stars: number
+  streak: number
+}
+
+function arrayCount(value: unknown) {
+  return Array.isArray(value) ? value.length : 0
+}
+
+function objectNumber(value: unknown, key: string) {
+  return typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>)[key] === 'number'
+    ? ((value as Record<string, number>)[key] ?? 0)
+    : 0
+}
+
+function summarizeSnapshot(
+  copy: AppCopy['account'],
+  snapshot: CloudSnapshot,
+  updatedAt?: string | null,
+): SnapshotSummary {
+  const values = snapshot.values
+  const exportedAt = updatedAt ?? snapshot.exportedAt
+  const updatedMs = Date.parse(exportedAt) || 0
+  const pomodoroRun = values.pomodoroRun
+  const streak = values.streak
+
+  return {
+    updatedMs,
+    updatedLabel: updatedMs
+      ? new Date(updatedMs).toLocaleString()
+      : copy.unknownDate,
+    taskCount: arrayCount(values.todos),
+    stars: objectNumber(pomodoroRun, 'totalStars'),
+    streak: objectNumber(streak, 'current'),
+  }
+}
+
 export function AccountMenu({
   copy,
   user,
@@ -86,6 +129,15 @@ export function AccountMenu({
   const [open, setOpen] = useState(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
   const label = statusLabel(copy, status)
+  const conflictLocal = conflict
+    ? summarizeSnapshot(copy, conflict.local)
+    : null
+  const conflictCloud = conflict
+    ? summarizeSnapshot(copy, conflict.remote.snapshot, conflict.remote.updatedAt)
+    : null
+  const cloudRecommended =
+    Boolean(conflictCloud && conflictLocal) &&
+    (conflictCloud?.updatedMs ?? 0) >= (conflictLocal?.updatedMs ?? 0)
 
   useEffect(() => {
     if (!open) {
@@ -152,15 +204,65 @@ export function AccountMenu({
           {conflict ? (
             <div className="account-conflict">
               <p>{copy.conflictHint}</p>
-              <button className="ghost-action full-width" type="button" onClick={onUseCloudVersion}>
+              <div className="account-conflict-grid">
+                {conflictCloud ? (
+                  <article
+                    className={`account-conflict-card${cloudRecommended ? ' is-recommended' : ''}`}
+                  >
+                    <span>{copy.cloudBackup}</span>
+                    {cloudRecommended ? <em>{copy.recommended}</em> : null}
+                    <strong>{copy.updated(conflictCloud.updatedLabel)}</strong>
+                    <small>{copy.taskCount(conflictCloud.taskCount)}</small>
+                    <small>{copy.starCount(conflictCloud.stars)}</small>
+                    <small>{copy.streakCount(conflictCloud.streak)}</small>
+                  </article>
+                ) : null}
+                {conflictLocal ? (
+                  <article
+                    className={`account-conflict-card${!cloudRecommended ? ' is-recommended' : ''}`}
+                  >
+                    <span>{copy.localBackup}</span>
+                    {!cloudRecommended ? <em>{copy.recommended}</em> : null}
+                    <strong>{copy.updated(conflictLocal.updatedLabel)}</strong>
+                    <small>{copy.taskCount(conflictLocal.taskCount)}</small>
+                    <small>{copy.starCount(conflictLocal.stars)}</small>
+                    <small>{copy.streakCount(conflictLocal.streak)}</small>
+                  </article>
+                ) : null}
+              </div>
+              <button
+                className="gold-action full-width"
+                type="button"
+                onClick={cloudRecommended ? onUseCloudVersion : onUseLocalVersion}
+              >
+                {cloudRecommended ? (
+                  <Cloud size={15} strokeWidth={1.8} />
+                ) : (
+                  <UploadCloud size={15} strokeWidth={1.8} />
+                )}
+                {copy.keepNewest}
+              </button>
+              <button
+                className="ghost-action full-width"
+                type="button"
+                onClick={onUseCloudVersion}
+              >
                 <Cloud size={15} strokeWidth={1.8} />
                 {copy.useCloud}
               </button>
-              <button className="ghost-action full-width" type="button" onClick={onUseLocalVersion}>
+              <button
+                className="ghost-action full-width"
+                type="button"
+                onClick={onUseLocalVersion}
+              >
                 <UploadCloud size={15} strokeWidth={1.8} />
                 {copy.useLocal}
               </button>
-              <button className="ghost-action full-width" type="button" onClick={onExportLocalBackup}>
+              <button
+                className="ghost-action full-width is-safety"
+                type="button"
+                onClick={onExportLocalBackup}
+              >
                 <Download size={15} strokeWidth={1.8} />
                 {copy.exportLocal}
               </button>

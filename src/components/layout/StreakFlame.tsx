@@ -26,6 +26,9 @@ type StreakFlameProps = {
   unlockCue: StreakUnlockCue | null
   evolution: FlameEvolutionState
   evolutionCue: FlameEvolutionUnlockCue | null
+  isOpen: boolean
+  onToggleOpen: () => void
+  onClose: () => void
   onEffectChange: (effect: FlameQuestEffect | null) => void
   onClaimEvolution: (cue: FlameEvolutionUnlockCue) => void
 }
@@ -37,10 +40,12 @@ export function StreakFlame({
   unlockCue,
   evolution,
   evolutionCue,
+  isOpen,
+  onToggleOpen,
+  onClose,
   onEffectChange,
   onClaimEvolution,
 }: StreakFlameProps) {
-  const [isOpen, setIsOpen] = useState(false)
   const [isIgniting, setIsIgniting] = useState(false)
   const [activeUnlockCue, setActiveUnlockCue] =
     useState<StreakUnlockCue | null>(null)
@@ -138,7 +143,7 @@ export function StreakFlame({
         data-flame-effect={selectedEffect ?? 'none'}
         aria-label={copy.open}
         aria-expanded={isOpen}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={onToggleOpen}
       >
         <span className="flame-orb">
           <FlameMark effect={selectedEffect} stage={flameStage} />
@@ -220,7 +225,7 @@ export function StreakFlame({
               className="quiet-icon streak-close"
               type="button"
               aria-label={copy.close}
-              onClick={() => setIsOpen(false)}
+              onClick={onClose}
             >
               <X size={16} strokeWidth={2} />
             </button>

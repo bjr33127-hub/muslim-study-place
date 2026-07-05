@@ -88,11 +88,14 @@ type TodoRenderEntry =
 type TodoWidgetProps = {
   copy: AppCopy['todo']
   windowTitle: string
+  windowEmoji: string
+  windowEmojiOptions: readonly string[]
   canDeleteWindow: boolean
   todos: TodoItem[]
   activeTaskId?: string
   isTimerRunning: boolean
   onRenameWindow: (title: string) => void
+  onEmojiChange: (emoji: string) => void
   onDeleteWindow: () => void
   onAddTask: (
     text: string,
@@ -206,11 +209,14 @@ function CompletedStack({ count, label }: { count: number; label: string }) {
 export function TodoWidget({
   copy,
   windowTitle,
+  windowEmoji,
+  windowEmojiOptions,
   canDeleteWindow,
   todos,
   activeTaskId,
   isTimerRunning,
   onRenameWindow,
+  onEmojiChange,
   onDeleteWindow,
   onAddTask,
   onUpdateTask,
@@ -820,6 +826,20 @@ export function TodoWidget({
   return (
     <div className="todo-widget">
       <div className="todo-window-bar">
+        <label className="todo-window-emoji">
+          <span>{copy.windowEmoji}</span>
+          <select
+            value={windowEmoji}
+            aria-label={copy.changeWindowEmoji(windowTitle)}
+            onChange={(event) => onEmojiChange(event.target.value)}
+          >
+            {windowEmojiOptions.map((emoji) => (
+              <option key={emoji} value={emoji}>
+                {emoji}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           <span>{copy.windowName}</span>
           <input

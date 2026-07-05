@@ -40,6 +40,7 @@ type SettingsPanelProps = {
   memoryNotice: string
   backgroundDim: number
   particlesEnabled: boolean
+  highContrast: boolean
   onClose: () => void
   onLanguageChange: (language: AppLanguage) => void
   onResetLayout: () => void
@@ -51,6 +52,7 @@ type SettingsPanelProps = {
   onTimerSettingChange: (key: keyof TimerSettings, value: number) => void
   onBackgroundDimChange: (value: number) => void
   onParticlesEnabledChange: (value: boolean) => void
+  onHighContrastChange: (value: boolean) => void
   onExportData: () => void
   onImportData: (file: File | null) => void
 }
@@ -71,6 +73,7 @@ export function SettingsPanel({
   memoryNotice,
   backgroundDim,
   particlesEnabled,
+  highContrast,
   onClose,
   onLanguageChange,
   onResetLayout,
@@ -82,6 +85,7 @@ export function SettingsPanel({
   onTimerSettingChange,
   onBackgroundDimChange,
   onParticlesEnabledChange,
+  onHighContrastChange,
   onExportData,
   onImportData,
 }: SettingsPanelProps) {
@@ -112,7 +116,16 @@ export function SettingsPanel({
         </button>
       </div>
 
-      <section className="settings-section">
+      <nav className="settings-nav" aria-label={copy.sectionsLabel}>
+        <a href="#settings-general">{copy.general}</a>
+        <a href="#settings-interface">{copy.interface}</a>
+        <a href="#settings-focus">{copy.focus}</a>
+        <a href="#settings-rewards">{copy.rewards}</a>
+        <a href="#settings-data">{copy.data}</a>
+        <a href="#settings-about">{copy.about}</a>
+      </nav>
+
+      <section className="settings-section" id="settings-general">
         <h3>{copy.language}</h3>
         <label className="settings-field">
           <span>{copy.interfaceLanguage}</span>
@@ -130,10 +143,10 @@ export function SettingsPanel({
         </label>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" id="settings-interface">
         <h3>{copy.widgets}</h3>
         <div className="settings-list">
-          {WIDGET_ORDER.filter((id) => id !== 'todo').map((id) => (
+          {WIDGET_ORDER.filter((id) => id !== 'todo' && id !== 'friends').map((id) => (
             <label key={id} className="settings-toggle">
               <span>{widgetLabels[id]}</span>
               <input
@@ -158,9 +171,37 @@ export function SettingsPanel({
           <RotateCcw size={16} strokeWidth={1.8} />
           {copy.resetLayout}
         </button>
+        <label className="settings-field">
+          <span>{copy.dimBackground}</span>
+          <input
+            type="range"
+            min="45"
+            max="100"
+            value={backgroundDim}
+            onChange={(event) => onBackgroundDimChange(Number(event.target.value))}
+          />
+        </label>
+        <label className="settings-toggle">
+          <span>{copy.magicParticles}</span>
+          <input
+            aria-label={copy.magicParticles}
+            type="checkbox"
+            checked={particlesEnabled}
+            onChange={(event) => onParticlesEnabledChange(event.target.checked)}
+          />
+        </label>
+        <label className="settings-toggle">
+          <span>{copy.highContrast}</span>
+          <input
+            aria-label={copy.highContrast}
+            type="checkbox"
+            checked={highContrast}
+            onChange={(event) => onHighContrastChange(event.target.checked)}
+          />
+        </label>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" id="settings-focus">
         <h3>{copy.pomodoro}</h3>
         <label className="settings-field">
           <span>{copy.focusMinutes}</span>
@@ -216,7 +257,7 @@ export function SettingsPanel({
         </label>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" id="settings-rewards">
         <h3>{copy.focusFlame}</h3>
         <label className="settings-field">
           <span>{copy.dailyFlameTarget}</span>
@@ -258,8 +299,11 @@ export function SettingsPanel({
         </div>
       </section>
 
-      <section className="settings-section">
-        <h3>{copy.memory}</h3>
+      <details className="settings-section settings-details" id="settings-data">
+        <summary>
+          <h3>{copy.memory}</h3>
+          <span>{copy.detailsToggle}</span>
+        </summary>
         <div
           className={`memory-status${memoryStatus.available ? ' is-ready' : ' is-offline'}`}
         >
@@ -292,38 +336,18 @@ export function SettingsPanel({
         <p className={memoryNotice ? 'form-error' : 'settings-hint'}>
           {memoryNotice || copy.importHint}
         </p>
-      </section>
+      </details>
 
-      <section className="settings-section">
-        <h3>{copy.background}</h3>
-        <label className="settings-field">
-          <span>{copy.dimBackground}</span>
-          <input
-            type="range"
-            min="45"
-            max="100"
-            value={backgroundDim}
-            onChange={(event) => onBackgroundDimChange(Number(event.target.value))}
-          />
-        </label>
-        <label className="settings-toggle">
-          <span>{copy.magicParticles}</span>
-          <input
-            aria-label={copy.magicParticles}
-            type="checkbox"
-            checked={particlesEnabled}
-            onChange={(event) => onParticlesEnabledChange(event.target.checked)}
-          />
-        </label>
-      </section>
-
-      <section className="settings-section credit-section">
-        <h3>{copy.credit}</h3>
+      <details className="settings-section settings-details credit-section" id="settings-about">
+        <summary>
+          <h3>{copy.credit}</h3>
+          <span>{copy.detailsToggle}</span>
+        </summary>
         <p>{copy.creditCopy}</p>
         <a href="https://github.com/Melkeydev/astrostation" target="_blank" rel="noreferrer">
           {copy.creditLink}
         </a>
-      </section>
+      </details>
 
       {codexOpen
         ? createPortal(

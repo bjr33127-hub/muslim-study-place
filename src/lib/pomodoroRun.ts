@@ -133,6 +133,15 @@ export function recordPomodoroStar(
   }
 }
 
+export function recordRevisionManualCompletionReward(
+  state: PomodoroRunState,
+  now = new Date(),
+) {
+  const run = normalizePomodoroRun(state)
+
+  return recordPomodoroStar(run, Math.max(run.currentRun, 1), now)
+}
+
 export function getPomodoroWeekSummary(
   state: PomodoroRunState,
   now = new Date(),

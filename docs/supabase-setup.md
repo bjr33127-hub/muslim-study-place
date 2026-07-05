@@ -19,6 +19,8 @@ https://bjr33127-hub.github.io/muslim-study-place/
 1. Create a free Supabase project.
 2. Open the SQL editor.
 3. Run `supabase/migrations/20260617000000_cloud_progress.sql`.
+4. Run `supabase/migrations/20260704000000_social_leaderboard.sql`.
+5. Run `supabase/migrations/20260704001000_friend_codes_leaderboard.sql`.
 
 ## 2. Configure Google OAuth
 
@@ -48,6 +50,7 @@ Copy `.env.example` to `.env.local` and fill:
 ```bash
 VITE_SUPABASE_URL=https://boucposhlzjnzrrqjazd.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
+VITE_GOOGLE_CALENDAR_CLIENT_ID=your-google-calendar-web-client-id
 ```
 
 Do not commit `.env.local`.
@@ -65,6 +68,7 @@ Required variables:
 ```bash
 VITE_SUPABASE_URL=https://boucposhlzjnzrrqjazd.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
+VITE_GOOGLE_CALENDAR_CLIENT_ID=your-google-calendar-web-client-id
 ```
 
 The deploy workflow `.github/workflows/deploy-pages.yml` publishes `dist` to the existing `gh-pages` branch.
@@ -74,6 +78,36 @@ The deploy workflow `.github/workflows/deploy-pages.yml` publishes `dist` to the
 - When signed in, Supabase is the cloud source of truth and local storage is an offline cache.
 - If both this PC and the cloud already have progress, the account menu asks which version to keep.
 - Daily streak dates are computed in Postgres with `now()` and the browser timezone.
+- Google Calendar sync is one-way: Muslim Study Place creates, updates, and deletes only its own revision events in the user's primary Google Calendar.
+- Google Calendar sync is session-based: after a refresh, reconnect Calendar from the Revisions page before autosync resumes.
+- The Google Calendar access token is kept in memory for the current browser session only; only Google event IDs and sync counts are stored locally/cloud.
+- Friends use personal friend codes, not email invitations. The leaderboard uses Supabase tables with RLS and compares weekly stars among accepted friends only.
+
+## 5. Enable Google Calendar sync
+
+1. In Google Cloud, enable the Google Calendar API for the same project.
+2. Keep the OAuth Client ID type as `Web application`.
+3. Add the same authorized JavaScript origins used for Google login:
+   - `http://localhost:5173`
+   - `http://127.0.0.1:5173`
+   - `http://localhost:5174`
+   - `http://127.0.0.1:5174`
+   - `https://bjr33127-hub.github.io`
+4. Add the client ID to local `.env.local` and GitHub Actions variables:
+   `VITE_GOOGLE_CALENDAR_CLIENT_ID=...`
+5. The app requests only:
+   `https://www.googleapis.com/auth/calendar.events.owned`
+6. If the page says `Configuration requise`, the app was built without `VITE_GOOGLE_CALENDAR_CLIENT_ID`.
+7. If the page says `Reconnecter Calendar`, Google Calendar is configured but the in-memory Google token was lost after refresh; reconnect once for the current session.
+
+## 6. Enable friends and leaderboard
+
+Run the social migrations in Supabase SQL Editor, in this order:
+
+1. `supabase/migrations/20260704000000_social_leaderboard.sql`
+2. `supabase/migrations/20260704001000_friend_codes_leaderboard.sql`
+
+If the Friends page says `Configuration Amis Supabase requise`, the app can sign in but the code-based friends RPCs or tables are missing on the remote project.
 
 ## Troubleshooting
 

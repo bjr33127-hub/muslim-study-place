@@ -2049,6 +2049,7 @@ async function main() {
       '.widget-frame-revisionCalendar, .widget-frame-revisionMethods',
     ).length,
     revisionPlannerButtons: document.querySelectorAll('.dock-revision-planner-button').length,
+    guideButtons: document.querySelectorAll('.dock-guide-button').length,
     dockButtons: document.querySelectorAll('.dock-button').length,
     noteFrames: document.querySelectorAll('.widget-frame-notes, .notes-widget').length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
@@ -2088,7 +2089,8 @@ async function main() {
   assert(initial.revisionFrames === 1, 'Only the revision dashboard widget should render')
   assert(initial.oldRevisionFrames === 0, 'Old revision calendar and methods widgets should not render')
   assert(initial.revisionPlannerButtons === 1, 'Revision planner should have one dock button')
-  assert(initial.dockButtons === 8, 'Expected eight dock buttons including planner, friends, and task-window add')
+  assert(initial.guideButtons === 1, 'Guide should have one dock button')
+  assert(initial.dockButtons === 9, 'Expected nine dock buttons including guide, planner, friends, and task-window add')
   assert(initial.noteFrames === 0, 'Notes widget should not render')
   assert(initial.noHorizontalOverflow, 'Desktop layout has horizontal overflow')
   assert(initial.privacyChipCount === 0, 'Local privacy chip should not render')
@@ -3630,7 +3632,7 @@ async function main() {
   const mobile = await page.evaluate(() => ({
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
     visibleSurfaces: document.querySelectorAll(
-      '.widget-frame, .revision-planner-page, .friends-page',
+      '.widget-frame, .revision-planner-page, .friends-page, .guide-page',
     ).length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     dockPosition: document.querySelector('.dock')
@@ -3666,11 +3668,22 @@ async function main() {
     await page.locator('.mini-pomodoro').count() === 0,
     'Opening Pomodoro should hide the mini timer',
   )
+  await page.locator('.dock-guide-button').click()
+  await page.waitForSelector('.guide-page')
+  assert(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
+        Boolean(document.querySelector('.guide-page')) &&
+        /Guide de demarrage|Starter guide/.test(document.body.textContent),
+    ),
+    'Guide should replace the active mobile surface and render starter content',
+  )
   await page.locator('.dock-revision-planner-button').click()
   await page.waitForSelector('.revision-planner-page')
   assert(
     await page.evaluate(
-      () => document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length,
+      () => document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length,
     ) === 1,
     'Planner should be the only mobile surface after opening revisions',
   )
@@ -3679,7 +3692,7 @@ async function main() {
   assert(
     await page.evaluate(
       () =>
-        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
         Boolean(document.querySelector('.friends-page')),
     ),
     'Friends should replace planner as the only mobile surface',
@@ -3689,7 +3702,7 @@ async function main() {
   assert(
     await page.evaluate(
       () =>
-        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
         Boolean(document.querySelector('.widget-frame-todo')),
     ),
     'Task page should replace friends as the only mobile surface',

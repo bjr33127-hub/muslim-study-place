@@ -169,6 +169,12 @@ const FriendsPage = lazy(() =>
   })),
 )
 
+const GuidePage = lazy(() =>
+  import('./components/layout/GuidePage').then((module) => ({
+    default: module.GuidePage,
+  })),
+)
+
 const RevisionPlannerPage = lazy(() =>
   import('./components/layout/RevisionPlannerPage').then((module) => ({
     default: module.RevisionPlannerPage,
@@ -180,7 +186,13 @@ const STREAK_TASK_UNLOCK_KEY = 'muslim-study-place:streak:lastTaskUnlockDate'
 const STATIC_WIDGET_ORDER = WIDGET_ORDER.filter(
   (id) => id !== 'todo' && id !== 'friends',
 )
-type MobileWorkspacePage = WidgetId | `task:${string}` | 'planner' | 'friends' | null
+type MobileWorkspacePage =
+  | WidgetId
+  | `task:${string}`
+  | 'planner'
+  | 'friends'
+  | 'guide'
+  | null
 
 const DEFAULT_MEMORY_STATUS: MemoryStatus = {
   available: false,
@@ -602,6 +614,7 @@ function App() {
     false,
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [guidePageOpen, setGuidePageOpen] = useState(false)
   const [revisionPlannerOpen, setRevisionPlannerOpen] = useState(false)
   const [friendsPageOpen, setFriendsPageOpen] = useState(false)
   const [isMobileWorkspace, setIsMobileWorkspace] = useState(() =>
@@ -1148,6 +1161,11 @@ function App() {
     setMobileWorkspacePage((current) => (current === 'friends' ? null : current))
   }, [])
 
+  const closeGuidePage = useCallback(() => {
+    setGuidePageOpen(false)
+    setMobileWorkspacePage((current) => (current === 'guide' ? null : current))
+  }, [])
+
   const handleDockWidgetToggle = useCallback(
     (id: WidgetId) => {
       if (isMobileWorkspace) {
@@ -1158,6 +1176,7 @@ function App() {
         }
 
         setMobileWorkspacePage(id)
+        setGuidePageOpen(false)
         setRevisionPlannerOpen(false)
         setFriendsPageOpen(false)
         focusWidget(id)
@@ -1193,6 +1212,7 @@ function App() {
         }
 
         setMobileWorkspacePage(page)
+        setGuidePageOpen(false)
         setRevisionPlannerOpen(false)
         setFriendsPageOpen(false)
         focusTaskWindow(id)
@@ -1223,6 +1243,7 @@ function App() {
       }
 
       setMobileWorkspacePage('planner')
+      setGuidePageOpen(false)
       setFriendsPageOpen(false)
       setRevisionPlannerOpen(true)
       return
@@ -1234,6 +1255,7 @@ function App() {
     }
 
     setFriendsPageOpen(false)
+    setGuidePageOpen(false)
     setRevisionPlannerOpen(true)
   }, [
     closeRevisionPlanner,
@@ -1250,6 +1272,7 @@ function App() {
       }
 
       setMobileWorkspacePage('friends')
+      setGuidePageOpen(false)
       setRevisionPlannerOpen(false)
       setFriendsPageOpen(true)
       return
@@ -1261,8 +1284,33 @@ function App() {
     }
 
     setRevisionPlannerOpen(false)
+    setGuidePageOpen(false)
     setFriendsPageOpen(true)
   }, [closeFriendsPage, friendsPageOpen, isMobileWorkspace, mobileWorkspacePage])
+
+  const handleGuidePageDockToggle = useCallback(() => {
+    if (isMobileWorkspace) {
+      if (guidePageOpen && mobileWorkspacePage === 'guide') {
+        closeGuidePage()
+        return
+      }
+
+      setMobileWorkspacePage('guide')
+      setRevisionPlannerOpen(false)
+      setFriendsPageOpen(false)
+      setGuidePageOpen(true)
+      return
+    }
+
+    if (guidePageOpen) {
+      setGuidePageOpen(false)
+      return
+    }
+
+    setRevisionPlannerOpen(false)
+    setFriendsPageOpen(false)
+    setGuidePageOpen(true)
+  }, [closeGuidePage, guidePageOpen, isMobileWorkspace, mobileWorkspacePage])
 
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length) {
@@ -1588,6 +1636,9 @@ function App() {
         },
       }
     })
+    setGuidePageOpen(false)
+    setRevisionPlannerOpen(false)
+    setFriendsPageOpen(false)
     setMobileWorkspacePage(taskMobilePage(id))
   }
 
@@ -2946,6 +2997,8 @@ function App() {
     revisionPlannerOpen && (!isMobileWorkspace || mobileWorkspacePage === 'planner')
   const friendsPageVisible =
     friendsPageOpen && (!isMobileWorkspace || mobileWorkspacePage === 'friends')
+  const guidePageVisible =
+    guidePageOpen && (!isMobileWorkspace || mobileWorkspacePage === 'guide')
   const timerDuration = Math.max(timerSeconds(timerMode, timerSettings), 1)
   const miniPomodoroProgress = Math.round(
     (Math.min(Math.max(timerDuration - timerRemaining, 0), timerDuration) /
@@ -2970,6 +3023,7 @@ function App() {
   const openMiniPomodoro = useCallback(() => {
     if (isMobileWorkspace) {
       setMobileWorkspacePage('pomodoro')
+      setGuidePageOpen(false)
       setRevisionPlannerOpen(false)
       setFriendsPageOpen(false)
     }
@@ -3066,6 +3120,11 @@ function App() {
         onExportData={exportData}
         onImportData={importData}
       />
+      {guidePageVisible ? (
+        <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
+          <GuidePage language={language} onClose={closeGuidePage} />
+        </Suspense>
+      ) : null}
       {revisionPlannerVisible ? (
         <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
           <RevisionPlannerPage
@@ -3138,6 +3197,8 @@ function App() {
           taskWindows: taskWindowBadges,
         }}
         addTaskWindowLabel={copy.todo.addWindow}
+        guideLabel={copy.dock.guide}
+        guideOpen={guidePageOpen}
         revisionPlannerLabel={copy.revisions.plannerOpen}
         revisionPlannerOpen={revisionPlannerOpen}
         friendsPageLabel={copy.friends.title}
@@ -3145,6 +3206,7 @@ function App() {
         onToggle={handleDockWidgetToggle}
         onToggleTaskWindow={handleDockTaskWindowToggle}
         onAddTaskWindow={addTaskWindow}
+        onOpenGuidePage={handleGuidePageDockToggle}
         onOpenRevisionPlanner={handleRevisionPlannerDockToggle}
         onOpenFriendsPage={handleFriendsPageDockToggle}
       />

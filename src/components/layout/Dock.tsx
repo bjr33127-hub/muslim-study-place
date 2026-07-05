@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpen,
   CalendarDays,
   CheckSquare,
   Image,
@@ -38,6 +39,8 @@ type DockProps = {
     taskWindows?: Record<string, DockBadge>
   }
   addTaskWindowLabel: string
+  guideLabel: string
+  guideOpen: boolean
   revisionPlannerLabel: string
   revisionPlannerOpen: boolean
   friendsPageLabel: string
@@ -45,6 +48,7 @@ type DockProps = {
   onToggle: (id: WidgetId) => void
   onToggleTaskWindow: (id: string) => void
   onAddTaskWindow: () => void
+  onOpenGuidePage: () => void
   onOpenRevisionPlanner: () => void
   onOpenFriendsPage: () => void
 }
@@ -57,6 +61,8 @@ export function Dock({
   taskWindowLayouts,
   badges,
   addTaskWindowLabel,
+  guideLabel,
+  guideOpen,
   revisionPlannerLabel,
   revisionPlannerOpen,
   friendsPageLabel,
@@ -64,6 +70,7 @@ export function Dock({
   onToggle,
   onToggleTaskWindow,
   onAddTaskWindow,
+  onOpenGuidePage,
   onOpenRevisionPlanner,
   onOpenFriendsPage,
 }: DockProps) {
@@ -82,6 +89,17 @@ export function Dock({
 
   return (
     <nav className="dock" aria-label={label}>
+      <button
+        className={`dock-button dock-guide-button${guideOpen ? ' is-active' : ''}`}
+        type="button"
+        aria-pressed={guideOpen}
+        aria-label={guideLabel}
+        title={guideLabel}
+        onClick={onOpenGuidePage}
+      >
+        <BookOpen size={20} strokeWidth={1.8} />
+        <span className="dock-label">{guideLabel}</span>
+      </button>
       <button
         className={`dock-button dock-revision-planner-button${revisionPlannerOpen ? ' is-active' : ''}`}
         type="button"

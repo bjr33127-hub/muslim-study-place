@@ -51,6 +51,7 @@ export const COPY = {
     },
     dock: {
       label: 'Widgets',
+      guide: 'Guide',
     },
     topbar: {
       openSettings: 'Ouvrir les parametres',
@@ -723,6 +724,7 @@ export const COPY = {
     },
     dock: {
       label: 'Widgets',
+      guide: 'Guide',
     },
     topbar: {
       openSettings: 'Open settings',

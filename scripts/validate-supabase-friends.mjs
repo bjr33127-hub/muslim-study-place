@@ -83,7 +83,6 @@ do $$
 declare
   lookup record;
   saved public.friend_invites;
-  had_active_invite boolean;
 begin
   select * into lookup
   from public.find_profile_by_friend_code('${targetCode}');
@@ -92,36 +91,33 @@ begin
     raise exception 'friend_lookup_returned_wrong_profile';
   end if;
 
-  select exists (
-    select 1
-    from public.friend_invites invite
-    join msp_friend_flow_test context
-      on (invite.sender_id = context.source_id and invite.recipient_id = context.target_id)
-      or (invite.sender_id = context.target_id and invite.recipient_id = context.source_id)
-    where invite.status in ('pending', 'accepted')
-  ) into had_active_invite;
+  if lookup.relation <> 'none' then
+    raise exception 'friend_test_requires_clean_relation: %', lookup.relation;
+  end if;
 
-  if lookup.relation = 'none' then
-    select * into saved
-    from public.send_friend_invite_by_code('${targetCode}');
+  select * into saved
+  from public.send_friend_invite_by_code('${targetCode}');
 
-    update msp_friend_flow_test
-    set created_invite = not had_active_invite, invite_id = saved.id;
+  if saved.sender_id <> (select source_id from msp_friend_flow_test)
+    or saved.recipient_id <> (select target_id from msp_friend_flow_test)
+    or saved.status <> 'pending' then
+    raise exception 'friend_invite_has_wrong_participants_or_status';
+  end if;
 
-    select * into lookup
-    from public.find_profile_by_friend_code('${targetCode}');
+  update msp_friend_flow_test
+  set created_invite = true, invite_id = saved.id;
 
-    if lookup.relation <> 'pending-sent' then
-      raise exception 'friend_invite_relation_not_updated: %', lookup.relation;
-    end if;
+  select * into lookup
+  from public.find_profile_by_friend_code('${targetCode}');
 
-    if not exists (
-      select 1 from public.get_friend_invites() invite where invite.id = saved.id
-    ) then
-      raise exception 'friend_invite_missing_from_requests';
-    end if;
-  elsif lookup.relation not in ('pending-sent', 'pending-received', 'friend') then
-    raise exception 'friend_lookup_invalid_relation: %', lookup.relation;
+  if lookup.relation <> 'pending-sent' then
+    raise exception 'friend_invite_relation_not_updated: %', lookup.relation;
+  end if;
+
+  if not exists (
+    select 1 from public.get_friend_invites() invite where invite.id = saved.id
+  ) then
+    raise exception 'friend_invite_missing_from_requests';
   end if;
 end $$;
 

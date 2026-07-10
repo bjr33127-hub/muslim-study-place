@@ -335,7 +335,7 @@ function MiniPomodoroButton({
           <strong>{formatCompactTime(remaining)}</strong>
           <small>
             <i className={isRunning ? 'is-live' : ''} />
-            {modeLabel}
+            <span className="mini-pomodoro-mode-label">{modeLabel}</span>
             <span className="mini-pomodoro-clock-separator" aria-hidden="true">
               ·
             </span>

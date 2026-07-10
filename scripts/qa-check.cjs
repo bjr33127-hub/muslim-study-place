@@ -2109,14 +2109,21 @@ async function main() {
         : null
     })(),
     pomodoroClock: (() => {
-      const time = document.querySelector('.pomodoro-real-clock time')
+      const time = document.querySelector('.pomodoro-ambient-clock')
       const tooltip = document.querySelector('.pomodoro-clock-tooltip')
+      const stage = document.querySelector('.timer-orbital')
 
       return {
-        text: time?.textContent?.trim() || '',
+        text: Array.from(time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)') || [])
+          .map((line) => line.textContent?.trim() || '')
+          .join(''),
         dateTime: time?.getAttribute('datetime') || '',
         tabIndex: time?.tabIndex ?? -1,
         tooltip: tooltip?.textContent?.trim() || '',
+        lineCount: time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)').length || 0,
+        stage: stage
+          ? { width: Math.round(stage.getBoundingClientRect().width), height: Math.round(stage.getBoundingClientRect().height) }
+          : null,
       }
     })(),
     memoryStore: Boolean(indexedDB),
@@ -2139,14 +2146,19 @@ async function main() {
   assert(initial.backgroundWatermark === 'Train', 'Background name should render as a discreet watermark')
   assert(initial.unlockCardCount === 0, 'Daily check-in alone should not show the task unlock animation')
   assert(
-    /^\d{2}:\d{2}$/.test(initial.pomodoroClock.text),
-    'Expanded Pomodoro should display the real time without seconds',
+    /^\d{4}$/.test(initial.pomodoroClock.text),
+    'Expanded Pomodoro should display the real time across two lines without seconds',
   )
   assert(
     Boolean(Date.parse(initial.pomodoroClock.dateTime)),
     'Expanded Pomodoro clock should expose a machine-readable dateTime',
   )
   assert(initial.pomodoroClock.tabIndex === 0, 'Expanded Pomodoro clock should be keyboard focusable')
+  assert(initial.pomodoroClock.lineCount === 2, 'Expanded Pomodoro clock should render the hour on two vertical lines')
+  assert(
+    initial.pomodoroClock.stage?.height > initial.pomodoroClock.stage?.width,
+    'Expanded Pomodoro clock should use a vertical glass stage',
+  )
   assert(
     /Fin si demarre maintenant/.test(initial.pomodoroClock.tooltip),
     'Paused Pomodoro should explain the estimated finish time',
@@ -3730,6 +3742,12 @@ async function main() {
     return timer && control ? control.left - timer.right : 0
   })
   assert(miniPomodoroGap >= 10, 'Reduced Pomodoro control is too close to the countdown')
+  const miniPomodoroFits = await page.evaluate(() => {
+    const clock = document.querySelector('.mini-pomodoro-copy time')?.getBoundingClientRect()
+    const control = document.querySelector('.mini-pomodoro-toggle')?.getBoundingClientRect()
+    return clock && control ? clock.right <= control.left - 4 : false
+  })
+  assert(miniPomodoroFits, 'Reduced Pomodoro real time should never be clipped by its control')
   await page.locator('.mini-pomodoro-toggle').click()
   await page.waitForFunction(() =>
     document

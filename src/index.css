@@ -6249,21 +6249,28 @@ button.flame-quest {
   min-width: 0;
   align-items: center;
   gap: 5px;
-  overflow: hidden;
   color: var(--muted);
   font-size: 8px;
   font-weight: 900;
   letter-spacing: 0.08em;
-  text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
+.mini-pomodoro-mode-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mini-pomodoro-clock-separator {
+  flex: 0 0 auto;
   color: color-mix(in srgb, var(--mode-accent) 72%, var(--muted));
 }
 
 .mini-pomodoro-copy time {
+  flex: 0 0 auto;
   color: color-mix(in srgb, var(--mode-accent) 72%, #fff9e9);
   font: inherit;
   font-variant-numeric: tabular-nums;
@@ -6327,35 +6334,94 @@ button.flame-quest {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(100%, 142px);
-  margin: 0 auto 18px;
-  aspect-ratio: 1;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 40%),
-    radial-gradient(circle at 50% 50%, var(--mode-accent-soft), transparent 68%);
+  width: min(100%, 184px);
+  height: 202px;
+  margin: 0 auto 10px;
+  isolation: isolate;
 }
 
 .timer-orbital::after {
   position: absolute;
-  inset: 17px;
+  z-index: 1;
+  inset: 29px 18px;
   content: "";
-  border-radius: inherit;
+  border-radius: 999px;
   background:
-    radial-gradient(circle at 38% 22%, rgba(255, 255, 255, 0.12), transparent 30%),
-    rgba(4, 6, 5, 0.58);
+    radial-gradient(circle at 38% 22%, rgba(255, 255, 255, 0.15), transparent 30%),
+    rgba(4, 6, 5, 0.78);
   box-shadow:
     inset 0 0 0 1px rgba(222, 211, 178, 0.1),
     0 18px 34px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.pomodoro-ambient-clock {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-content: center;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--mode-accent) 32%, rgba(255, 249, 233, 0.2));
+  border-radius: 28px;
+  color: color-mix(in srgb, var(--mode-accent) 72%, #fff9e9);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.13), transparent 28%),
+    linear-gradient(160deg, color-mix(in srgb, var(--mode-accent) 17%, transparent), transparent 58%),
+    rgba(8, 14, 12, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.17),
+    inset 0 -18px 36px rgba(0, 0, 0, 0.18),
+    0 18px 42px rgba(0, 0, 0, 0.3),
+    0 0 28px color-mix(in srgb, var(--mode-glow) 46%, transparent);
+  backdrop-filter: blur(22px) saturate(1.18);
+  font-size: 94px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.105em;
+  line-height: 0.69;
+  outline: none;
+  text-align: center;
+  text-shadow: 0 0 32px color-mix(in srgb, var(--mode-glow) 82%, transparent);
+}
+
+.pomodoro-ambient-clock::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 25% 10%, rgba(255, 255, 255, 0.25), transparent 29%),
+    linear-gradient(100deg, transparent 22%, rgba(255, 255, 255, 0.07) 48%, transparent 71%);
+  content: '';
+  pointer-events: none;
+}
+
+.pomodoro-ambient-clock > span:not(.pomodoro-clock-tooltip) {
+  opacity: 0.3;
+}
+
+.pomodoro-ambient-clock > span:first-child {
+  transform: translateY(-19px);
+}
+
+.pomodoro-ambient-clock > span:nth-child(2) {
+  transform: translateY(19px);
+}
+
+.pomodoro-ambient-clock:focus-visible {
+  outline: 2px solid var(--mode-accent);
+  outline-offset: 4px;
 }
 
 .timer-ring {
   position: absolute;
-  inset: 6px;
-  width: calc(100% - 12px);
-  height: calc(100% - 12px);
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 142px;
+  height: 142px;
   overflow: visible;
-  transform: rotate(-90deg);
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 .timer-ring-track,
@@ -6381,7 +6447,7 @@ button.flame-quest {
 
 .timer-core {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   display: grid;
   place-items: center;
   gap: 4px;
@@ -6416,50 +6482,9 @@ button.flame-quest {
   text-transform: uppercase;
 }
 
-.pomodoro-real-clock {
-  position: absolute;
-  bottom: -10px;
-  left: 50%;
-  z-index: 3;
-  display: inline-flex;
-  min-height: 25px;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border: 1px solid color-mix(in srgb, var(--mode-accent) 42%, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  color: color-mix(in srgb, var(--mode-accent) 78%, #fff9e9);
-  background:
-    linear-gradient(115deg, color-mix(in srgb, var(--mode-accent) 14%, transparent), transparent 62%),
-    rgba(7, 12, 10, 0.9);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 8px 20px rgba(0, 0, 0, 0.32),
-    0 0 18px color-mix(in srgb, var(--mode-glow) 68%, transparent);
-  backdrop-filter: blur(14px) saturate(1.15);
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-
-.pomodoro-real-clock time {
-  border-radius: 5px;
-  color: #fff9e9;
-  font-size: 11px;
-  font-weight: 850;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.055em;
-  line-height: 1;
-  outline: none;
-}
-
-.pomodoro-real-clock time:focus-visible {
-  outline: 2px solid var(--mode-accent);
-  outline-offset: 3px;
-}
-
 .pomodoro-clock-tooltip {
   position: absolute;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 9px);
   left: 50%;
   width: max-content;
   max-width: 210px;
@@ -6479,8 +6504,8 @@ button.flame-quest {
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
-.pomodoro-real-clock:hover .pomodoro-clock-tooltip,
-.pomodoro-real-clock:focus-within .pomodoro-clock-tooltip {
+.pomodoro-ambient-clock:hover .pomodoro-clock-tooltip,
+.pomodoro-ambient-clock:focus .pomodoro-clock-tooltip {
   opacity: 1;
   transform: translate(-50%, 0);
 }

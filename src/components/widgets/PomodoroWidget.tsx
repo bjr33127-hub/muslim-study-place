@@ -1,5 +1,4 @@
 import {
-  Clock3,
   Coffee,
   Flame,
   Minus,
@@ -304,6 +303,18 @@ export function PomodoroWidget({
       </div>
 
       <div className="timer-orbital" aria-label={copy.progress(progress)}>
+        <time
+          className="pomodoro-ambient-clock"
+          dateTime={new Date(currentTime).toISOString()}
+          aria-label={clockLabel}
+          tabIndex={0}
+        >
+          <span aria-hidden="true">{currentClockText.slice(0, 2)}</span>
+          <span aria-hidden="true">{currentClockText.slice(-2)}</span>
+          <span className="pomodoro-clock-tooltip" role="tooltip">
+            {clockTooltip}
+          </span>
+        </time>
         <svg className="timer-ring" viewBox={`0 0 ${TIMER_RING_SIZE} ${TIMER_RING_SIZE}`}>
           <circle
             className="timer-ring-track"
@@ -329,19 +340,6 @@ export function PomodoroWidget({
           <div className="timer-readout">{formatTime(remaining)}</div>
           <small>{copy.modes[mode]}</small>
         </div>
-        <span className="pomodoro-real-clock">
-          <Clock3 size={12} strokeWidth={1.9} aria-hidden="true" />
-          <time
-            dateTime={new Date(currentTime).toISOString()}
-            aria-label={clockLabel}
-            tabIndex={0}
-          >
-            {currentClockText}
-          </time>
-          <span className="pomodoro-clock-tooltip" role="tooltip">
-            {clockTooltip}
-          </span>
-        </span>
       </div>
 
       <div className="pomodoro-chain" aria-label={copy.continuousAria}>

@@ -81,12 +81,15 @@ function Avatar({
   label: string
   size?: number
 }) {
-  return src ? (
+  const [failedSource, setFailedSource] = useState('')
+
+  return src && failedSource !== src ? (
     <img
       className="friends-avatar"
       src={src}
       alt=""
       style={{ width: size, height: size }}
+      onError={() => setFailedSource(src)}
     />
   ) : (
     <span

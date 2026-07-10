@@ -127,6 +127,7 @@ export function AccountMenu({
   onExportLocalBackup,
 }: AccountMenuProps) {
   const [open, setOpen] = useState(false)
+  const [failedAvatarSource, setFailedAvatarSource] = useState('')
   const shellRef = useRef<HTMLDivElement | null>(null)
   const label = statusLabel(copy, status)
   const conflictLocal = conflict
@@ -168,8 +169,12 @@ export function AccountMenu({
         onClick={() => setOpen((current) => !current)}
       >
         <span className="account-avatar" aria-hidden="true">
-          {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" />
+          {user?.avatarUrl && failedAvatarSource !== user.avatarUrl ? (
+            <img
+              src={user.avatarUrl}
+              alt=""
+              onError={() => setFailedAvatarSource(user.avatarUrl)}
+            />
           ) : (
             <UserCircle size={19} strokeWidth={1.75} />
           )}

@@ -45,6 +45,9 @@ jobs:
       - name: Apply Supabase migrations
         run: node scripts/deploy-supabase-migrations.mjs
 
+      - name: Validate friends flow
+        run: node scripts/validate-supabase-friends.mjs
+
       - name: Build
         run: npm run build
 

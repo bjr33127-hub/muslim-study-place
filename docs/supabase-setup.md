@@ -21,6 +21,8 @@ https://bjr33127-hub.github.io/muslim-study-place/
 3. Run `supabase/migrations/20260617000000_cloud_progress.sql`.
 4. Run `supabase/migrations/20260704000000_social_leaderboard.sql`.
 5. Run `supabase/migrations/20260704001000_friend_codes_leaderboard.sql`.
+6. Run `supabase/migrations/20260705000000_social_stats_details.sql`.
+7. Run `supabase/migrations/20260709224456_improve_friend_invites.sql`.
 
 ## 2. Configure Google OAuth
 
@@ -52,6 +54,20 @@ VITE_SUPABASE_URL=https://boucposhlzjnzrrqjazd.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
 VITE_GOOGLE_CALENDAR_CLIENT_ID=your-google-calendar-web-client-id
 ```
+
+Add this value as a GitHub Actions **Secret** so every production deploy
+applies the migrations before publishing the frontend:
+
+```text
+SUPABASE_ACCESS_TOKEN=your-personal-access-token
+```
+
+The token is used by `scripts/deploy-supabase-migrations.mjs` with Supabase's
+Management API. The script compares the latest remote migration version and
+applies only newer SQL files. The deployment stops when the secret is missing.
+This prevents a new
+frontend from going live against an older schema, which otherwise breaks friend
+codes, invitations, or the leaderboard independently.
 
 Do not commit `.env.local`.
 
@@ -102,10 +118,15 @@ The deploy workflow `.github/workflows/deploy-pages.yml` publishes `dist` to the
 
 ## 6. Enable friends and leaderboard
 
-Run the social migrations in Supabase SQL Editor, in this order:
+For a first manual setup, run the social migrations in Supabase SQL Editor, in this order:
 
 1. `supabase/migrations/20260704000000_social_leaderboard.sql`
 2. `supabase/migrations/20260704001000_friend_codes_leaderboard.sql`
+3. `supabase/migrations/20260705000000_social_stats_details.sql`
+4. `supabase/migrations/20260709224456_improve_friend_invites.sql`
+
+Once `SUPABASE_ACCESS_TOKEN` is configured, later GitHub deployments apply new
+migration files automatically.
 
 If the Friends page says `Configuration Amis Supabase requise`, the app can sign in but the code-based friends RPCs or tables are missing on the remote project.
 

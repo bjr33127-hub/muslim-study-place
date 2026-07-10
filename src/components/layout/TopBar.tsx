@@ -80,6 +80,7 @@ export function TopBar({
         <button
           className="icon-button settings-trigger"
           type="button"
+          data-guide="settings-open"
           aria-label={copy.topbar.openSettings}
           onClick={onOpenSettings}
         >

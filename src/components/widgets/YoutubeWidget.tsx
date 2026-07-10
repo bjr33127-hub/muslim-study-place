@@ -930,6 +930,9 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
     const nextUrl = String(data.get('youtube-url') ?? '').trim()
 
     setYoutubeUrl(nextUrl || YOUTUBE_DEFAULT_URL)
+    window.dispatchEvent(new CustomEvent('msp:guide-action', {
+      detail: { action: 'youtube-url-saved' },
+    }))
   }
 
   const changePlaylistOrder = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -969,6 +972,9 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
         [playlistId]: nextPlaylist,
       }
     })
+    window.dispatchEvent(new CustomEvent('msp:guide-action', {
+      detail: { action: 'youtube-watched-toggled', id: video.videoId },
+    }))
   }
 
   const goToPrevious = () => {
@@ -1078,7 +1084,7 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
           ) : null}
         </div>
         {playerError ? <p className="youtube-error">{playerError}</p> : null}
-        <form className="url-form" onSubmit={saveUrl}>
+        <form className="url-form" data-guide="youtube-url-form" onSubmit={saveUrl}>
           <input
             key={effectiveYoutubeUrl}
             name="youtube-url"
@@ -1139,7 +1145,7 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
 
           <div className="youtube-playlist-list">
             {orderedPlaylistVideos.length ? (
-              orderedPlaylistVideos.map((video) => {
+              orderedPlaylistVideos.map((video, displayIndex) => {
                 const title = displayVideoTitle(video, copy)
                 const isActive = video.index === activeIndex
                 const isWatched = Boolean(watchedForPlaylist[video.videoId])
@@ -1178,6 +1184,7 @@ export function YoutubeWidget({ copy }: YoutubeWidgetProps) {
                     <button
                       className={`youtube-watch-button${isWatched ? ' is-watched' : ''}`}
                       type="button"
+                      data-guide={displayIndex === 0 ? 'youtube-mark-watched' : undefined}
                       aria-label={
                         isWatched ? copy.markUnwatched(title) : copy.markWatched(title)
                       }

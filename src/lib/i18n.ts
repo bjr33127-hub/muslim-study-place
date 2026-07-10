@@ -421,6 +421,7 @@ export const COPY = {
       plannerClose: 'Fermer les revisions',
       todayTab: 'Aujourd hui',
       calendarTab: 'Calendrier',
+      coursesTab: 'Mes cours',
       methodsTab: 'Methodes',
       viewMonth: 'Mois',
       viewWeek: 'Semaine',
@@ -434,6 +435,9 @@ export const COPY = {
         'Ajoute un cours ou verifie tes methodes pour generer les prochains rappels.',
       todayQuestion: 'Que dois-je reviser maintenant ?',
       addFirstCourse: 'Ajouter mon premier cours',
+      coursesEmpty: 'Aucun cours enregistre',
+      courseReminders: (count: number) =>
+        `${count} ${count > 1 ? 'rappels programmes' : 'rappel programme'}`,
       openPlanner: 'Ouvrir le planner',
       chooseMethod: 'Choisir une methode',
       calendarEmptyTitle: 'Ajoute un cours pour generer automatiquement tes revisions',
@@ -525,6 +529,12 @@ export const COPY = {
       googleCalendarConnected: 'Connecte pour cette session',
       googleCalendarConfiguredNeeded: 'Configuration requise',
       googleCalendarNeedsConnect: 'Reconnecte Calendar apres actualisation',
+      googleCalendarAuthExpired:
+        'La connexion Google Calendar a expire. Reconnecte-la pour reprendre la synchronisation.',
+      googleCalendarRateLimited:
+        'Google Calendar recoit trop de demandes. Reessaie dans quelques instants.',
+      googleCalendarSyncFailed:
+        'La synchronisation Calendar a echoue. Reessaie dans un instant.',
       googleCalendarChecklist:
         'Ajoute VITE_GOOGLE_CALENDAR_CLIENT_ID, active Google Calendar API, puis autorise le domaine local et public.',
       googleCalendarSynced: (value: string) => `Synchronise a ${value}`,
@@ -1094,6 +1104,7 @@ export const COPY = {
       plannerClose: 'Close revisions',
       todayTab: 'Today',
       calendarTab: 'Calendar',
+      coursesTab: 'My courses',
       methodsTab: 'Methods',
       viewMonth: 'Month',
       viewWeek: 'Week',
@@ -1107,6 +1118,9 @@ export const COPY = {
         'Add a course or check your methods to generate the next reminders.',
       todayQuestion: 'What should I review now?',
       addFirstCourse: 'Add my first course',
+      coursesEmpty: 'No saved courses yet',
+      courseReminders: (count: number) =>
+        `${count} ${count === 1 ? 'scheduled reminder' : 'scheduled reminders'}`,
       openPlanner: 'Open planner',
       chooseMethod: 'Choose a method',
       calendarEmptyTitle: 'Add a course to automatically generate revisions',
@@ -1198,6 +1212,11 @@ export const COPY = {
       googleCalendarConnected: 'Connected for this session',
       googleCalendarConfiguredNeeded: 'Configuration required',
       googleCalendarNeedsConnect: 'Reconnect Calendar after refresh',
+      googleCalendarAuthExpired:
+        'The Google Calendar connection expired. Reconnect it to resume syncing.',
+      googleCalendarRateLimited:
+        'Google Calendar is receiving too many requests. Try again shortly.',
+      googleCalendarSyncFailed: 'Calendar sync failed. Try again in a moment.',
       googleCalendarChecklist:
         'Add VITE_GOOGLE_CALENDAR_CLIENT_ID, enable Google Calendar API, then allow local and public domains.',
       googleCalendarSynced: (value: string) => `Synced at ${value}`,

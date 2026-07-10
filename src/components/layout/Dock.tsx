@@ -103,6 +103,7 @@ export function Dock({
       <button
         className={`dock-button dock-revision-planner-button${revisionPlannerOpen ? ' is-active' : ''}`}
         type="button"
+        data-guide="revisions-open"
         aria-pressed={revisionPlannerOpen}
         aria-label={revisionPlannerLabel}
         title={revisionPlannerLabel}
@@ -165,6 +166,7 @@ export function Dock({
               key={id}
               className={`dock-button dock-widget-button dock-widget-${id}${friendsPageOpen ? ' is-active' : ''}`}
               type="button"
+              data-guide="friends-open"
               aria-pressed={friendsPageOpen}
               aria-label={friendsAriaLabel}
               title={friendsAriaLabel}
@@ -191,6 +193,13 @@ export function Dock({
             key={id}
             className={`dock-button dock-widget-button dock-widget-${id}${visible ? ' is-active' : ''}`}
             type="button"
+            data-guide={
+              id === 'backgrounds'
+                ? 'backgrounds-open'
+                : id === 'youtube'
+                  ? 'youtube-open'
+                  : undefined
+            }
             aria-pressed={visible}
             aria-label={widgetAriaLabel}
             title={widgetAriaLabel}

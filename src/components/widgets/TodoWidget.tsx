@@ -865,7 +865,7 @@ export function TodoWidget({
           </button>
         ) : null}
       </div>
-      <form className="todo-form" onSubmit={addTodo}>
+      <form className="todo-form" data-guide="todo-add-form" onSubmit={addTodo}>
         <div className="todo-form-main">
           <input
             value={draft}

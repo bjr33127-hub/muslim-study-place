@@ -45,7 +45,13 @@ export function BackgroundsWidget({
               selectedId === background.id ? ' is-selected' : ''
             }`}
           >
-            <button type="button" onClick={() => onSelect(background.id)}>
+            <button
+              type="button"
+              data-guide-background-choice={
+                selectedId === background.id ? undefined : background.id
+              }
+              onClick={() => onSelect(background.id)}
+            >
               <ImagePlus size={16} strokeWidth={1.8} />
               <span>{background.label}</span>
               <small>

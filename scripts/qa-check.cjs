@@ -977,6 +977,18 @@ async function runRevisionQa(browser) {
     'Completed revisions from the same course should stack into one group',
   )
 
+  await page.getByLabel('Ouvrir calendrier et methodes').click()
+  const coursePlanner = page.locator('.revision-planner-page')
+  await coursePlanner.getByRole('tab', { name: 'Mes cours' }).click()
+  assert(
+    await coursePlanner.getByText('QA Revision Source').isVisible(),
+    'My courses should list the created course',
+  )
+  assert(
+    await coursePlanner.locator(`[data-guide-course-delete="${course.id}"]`).isVisible(),
+    'My courses should expose an explicit delete action for each course',
+  )
+
   await context.close()
 }
 
@@ -1533,6 +1545,22 @@ async function runCloudSyncQa(browser) {
     await emptyCloudPage.locator('.dock-widget-friends .dock-badge').textContent() === '1',
     'Incoming friend requests should show a red dock badge',
   )
+  await emptyCloudPage.locator('.dock-widget-friends').click()
+  await emptyCloudPage.waitForSelector('.friends-page')
+  await emptyCloudPage.getByRole('tab', { name: 'Demandes' }).click()
+  await emptyCloudPage.getByRole('button', { name: 'Accepter' }).click()
+  await emptyCloudPage.waitForFunction(
+    () =>
+      window.__mspSupabaseState?.friendInvites?.find(
+        (invite) => invite.id === 'qa-incoming-invite',
+      )?.status === 'accepted',
+  )
+  await emptyCloudPage.getByRole('tab', { name: 'Amis' }).click()
+  assert(
+    await emptyCloudPage.getByText('QA Friend').isVisible(),
+    'Accepting an invitation should move the profile into the friends list',
+  )
+  await emptyCloudPage.getByLabel('Fermer les amis').click()
   assert(
     await emptyCloudPage.evaluate(() => {
       const state = window.__mspSupabaseState
@@ -3632,7 +3660,7 @@ async function main() {
   const mobile = await page.evaluate(() => ({
     visibleWidgets: document.querySelectorAll('.widget-frame').length,
     visibleSurfaces: document.querySelectorAll(
-      '.widget-frame, .revision-planner-page, .friends-page, .guide-page',
+      '.widget-frame, .revision-planner-page, .friends-page',
     ).length,
     noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
     dockPosition: document.querySelector('.dock')
@@ -3662,6 +3690,12 @@ async function main() {
   await page.locator('.dock-widget-pomodoro').click()
   await page.waitForTimeout(250)
   assert(await page.locator('.mini-pomodoro').isVisible(), 'Reduced Pomodoro should leave a mini timer visible')
+  const miniPomodoroGap = await page.evaluate(() => {
+    const timer = document.querySelector('.mini-pomodoro-copy strong')?.getBoundingClientRect()
+    const control = document.querySelector('.mini-pomodoro-toggle')?.getBoundingClientRect()
+    return timer && control ? control.left - timer.right : 0
+  })
+  assert(miniPomodoroGap >= 10, 'Reduced Pomodoro control is too close to the countdown')
   await page.locator('.mini-pomodoro-orb').click()
   await page.waitForSelector('.widget-frame-pomodoro')
   assert(
@@ -3669,21 +3703,42 @@ async function main() {
     'Opening Pomodoro should hide the mini timer',
   )
   await page.locator('.dock-guide-button').click()
-  await page.waitForSelector('.guide-page')
+  await page.waitForSelector('.guide-tour-card')
   assert(
     await page.evaluate(
       () =>
-        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
-        Boolean(document.querySelector('.guide-page')) &&
-        /Guide de demarrage|Starter guide/.test(document.body.textContent),
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
+        Boolean(document.querySelector('.guide-tour-card')) &&
+        /explore le site ensemble|explore the site together/i.test(document.body.textContent),
     ),
-    'Guide should replace the active mobile surface and render starter content',
+    'Guide should overlay the active mobile surface and render the interactive tour',
   )
+  assert(
+    /1\/18/.test(await page.locator('.guide-tour-card').innerText()),
+    'Guide should expose the complete 18-step interactive route',
+  )
+  await page.locator('.guide-tour-card .gold-action').click()
+  await page.waitForSelector('[data-guide="pomodoro-start"]')
+  assert(
+    await page.locator('[data-guide="pomodoro-start"]').isEnabled(),
+    'Guide Pomodoro target should remain clickable after a completed objective',
+  )
+  const guideOverlap = await page.evaluate(() => {
+    const card = document.querySelector('.guide-tour-card')?.getBoundingClientRect()
+    const target = document.querySelector('[data-guide="pomodoro-start"]')?.getBoundingClientRect()
+
+    return card && target
+      ? !(card.right <= target.left || card.left >= target.right || card.bottom <= target.top || card.top >= target.bottom)
+      : true
+  })
+  assert(!guideOverlap, 'Guide coachmark should not cover the highlighted Pomodoro control')
+  await page.locator('.guide-tour-card .quiet-icon').click()
+  await page.waitForSelector('.guide-tour', { state: 'detached' })
   await page.locator('.dock-revision-planner-button').click()
   await page.waitForSelector('.revision-planner-page')
   assert(
     await page.evaluate(
-      () => document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length,
+      () => document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length,
     ) === 1,
     'Planner should be the only mobile surface after opening revisions',
   )
@@ -3692,7 +3747,7 @@ async function main() {
   assert(
     await page.evaluate(
       () =>
-        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
         Boolean(document.querySelector('.friends-page')),
     ),
     'Friends should replace planner as the only mobile surface',
@@ -3702,7 +3757,7 @@ async function main() {
   assert(
     await page.evaluate(
       () =>
-        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page, .guide-page').length === 1 &&
+        document.querySelectorAll('.widget-frame, .revision-planner-page, .friends-page').length === 1 &&
         Boolean(document.querySelector('.widget-frame-todo')),
     ),
     'Task page should replace friends as the only mobile surface',

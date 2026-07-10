@@ -141,13 +141,20 @@ async function googleCalendarRequest<T>(
     },
   })
 
-  if (response.status === 404) {
+  if (response.status === 404 || response.status === 410) {
     throw new Error('google_event_not_found')
   }
 
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('google_calendar_auth_expired')
+  }
+
+  if (response.status === 429) {
+    throw new Error('google_calendar_rate_limited')
+  }
+
   if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    throw new Error(text || `google_calendar_${response.status}`)
+    throw new Error(`google_calendar_${response.status}`)
   }
 
   return (await response.json().catch(() => ({}))) as T

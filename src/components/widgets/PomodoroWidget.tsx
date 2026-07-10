@@ -14,7 +14,6 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 import type { ComponentType } from 'react'
 import type { AppCopy } from '../../lib/i18n'
-import { recordPomodoroStar } from '../../lib/pomodoroRun'
 import { timerSeconds } from '../../lib/timer'
 import { clampPomodoros } from '../../lib/todos'
 import type { PomodoroRunState, TimerMode, TimerSettings } from '../../types/app'
@@ -92,7 +91,7 @@ type PomodoroWidgetProps = {
   ) => void
   onTargetChange: (targetPomodoros: number) => void
   onStartFreeFocus: () => void
-  onFocusComplete: () => void
+  onCompleteSegment: () => number
 }
 
 export function PomodoroWidget({
@@ -109,12 +108,11 @@ export function PomodoroWidget({
   onRunChange,
   onTargetChange,
   onStartFreeFocus,
-  onFocusComplete,
+  onCompleteSegment,
 }: PomodoroWidgetProps) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastBeepAtRef = useRef(0)
   const target = clampPomodoros(run.targetPomodoros)
-  const longBreakEvery = clampPomodoros(timerSettings.longBreakEvery)
   const filledStars = Math.min(run.currentRun, target)
   const objectiveFinished = run.completedInTarget >= target
   const earnedStars = Math.max(run.currentRun, run.completedInTarget)
@@ -189,46 +187,6 @@ export function PomodoroWidget({
     onRunningChange(keepRunning)
   }, [onModeChange, onRemainingChange, onRunningChange, timerSettings])
 
-  const completeFocus = useCallback(() => {
-    onFocusComplete()
-    const nextRunCount = run.currentRun + 1
-    const nextCompleted = Math.min(run.completedInTarget + 1, target)
-    const objectiveComplete = nextCompleted >= target
-
-    onRunChange(
-      recordPomodoroStar(
-        {
-          ...run,
-          targetPomodoros: target,
-          completedInTarget: nextCompleted,
-        },
-        nextRunCount,
-      ),
-    )
-
-    if (objectiveComplete) {
-      onRunningChange(false)
-      return 0
-    }
-
-    const nextMode: TimerMode =
-      nextRunCount % longBreakEvery === 0 ? 'longBreak' : 'shortBreak'
-
-    onModeChange(nextMode)
-    onRunningChange(run.autoCycle)
-
-    return timerSeconds(nextMode, timerSettings)
-  }, [
-    longBreakEvery,
-    onFocusComplete,
-    onModeChange,
-    onRunChange,
-    onRunningChange,
-    run,
-    target,
-    timerSettings,
-  ])
-
   useEffect(() => {
     window.addEventListener('pointerdown', primeTimerBeep, { passive: true })
     window.addEventListener('keydown', primeTimerBeep)
@@ -265,40 +223,6 @@ export function PomodoroWidget({
     remaining,
   ])
 
-  useEffect(() => {
-    if (!isRunning) {
-      return
-    }
-
-    const interval = window.setInterval(() => {
-      onRemainingChange((current) => {
-        if (current > 1) {
-          return current - 1
-        }
-
-        window.clearInterval(interval)
-        playTimerBeep()
-
-        if (mode === 'focus') {
-          return completeFocus()
-        }
-
-        switchMode('focus', run.autoCycle)
-        return 0
-      })
-    }, 1000)
-
-    return () => window.clearInterval(interval)
-  }, [
-    completeFocus,
-    isRunning,
-    mode,
-    onRemainingChange,
-    playTimerBeep,
-    run,
-    switchMode,
-  ])
-
   const startOrPause = () => {
     if (isRunning) {
       onRunningChange(false)
@@ -306,6 +230,8 @@ export function PomodoroWidget({
     }
 
     if (objectiveFinished) {
+      interruptRun()
+      switchMode('focus', true)
       return
     }
 
@@ -322,13 +248,8 @@ export function PomodoroWidget({
   }
 
   const skipSegment = () => {
-    if (mode === 'focus') {
-      playTimerBeep()
-      onRemainingChange(completeFocus())
-      return
-    }
-
-    switchMode('focus', run.autoCycle)
+    playTimerBeep()
+    onRemainingChange(onCompleteSegment())
   }
 
   return (
@@ -481,8 +402,8 @@ export function PomodoroWidget({
         <button
           className="primary-action"
           type="button"
+          data-guide="pomodoro-start"
           onClick={startOrPause}
-          disabled={objectiveFinished && !isRunning}
         >
           {isRunning ? (
             <Pause size={17} strokeWidth={1.9} />

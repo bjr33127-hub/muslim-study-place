@@ -12,6 +12,7 @@ import type {
 import type { DateClickArg } from '@fullcalendar/interaction'
 import {
   CalendarDays,
+  BookOpen,
   CheckCircle2,
   Edit3,
   RefreshCcw,
@@ -26,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import { RevisionMethodsWidget } from '../widgets/RevisionMethodsWidget'
 import type { AppCopy } from '../../lib/i18n'
+import type { GuideTourStep } from './GuidePage'
 import {
   REVISION_COLOR_PRESETS,
   REVISION_WEEKDAYS,
@@ -62,7 +64,7 @@ import type {
 } from '../../types/app'
 
 type PlannerView = RevisionSettings['plannerView']
-type PlannerTab = 'today' | 'calendar' | 'methods'
+type PlannerTab = 'today' | 'calendar' | 'courses' | 'methods'
 
 type RevisionPlannerPageProps = {
   copy: AppCopy['revisions']
@@ -75,6 +77,7 @@ type RevisionPlannerPageProps = {
   googleCalendar: GoogleCalendarSyncState
   googleCalendarConfigured: boolean
   googleCalendarSessionConnected: boolean
+  guideStep?: GuideTourStep
   onClose: () => void
   onSettingsChange: (settings: Partial<RevisionSettings>) => void
   onSaveCourse: (course: RevisionCourse) => void
@@ -193,6 +196,7 @@ export function RevisionPlannerPage({
   googleCalendar,
   googleCalendarConfigured,
   googleCalendarSessionConnected,
+  guideStep,
   onClose,
   onSettingsChange,
   onSaveCourse,
@@ -208,7 +212,9 @@ export function RevisionPlannerPage({
   onDeleteMethod,
 }: RevisionPlannerPageProps) {
   const calendarRef = useRef<FullCalendar | null>(null)
-  const [tab, setTab] = useState<PlannerTab>('today')
+  const [tab, setTab] = useState<PlannerTab>(() =>
+    guideStep === 'course-delete' ? 'courses' : 'today',
+  )
   const [draft, setDraft] = useState<CourseDraft | null>(null)
   const [draftStep, setDraftStep] = useState<CourseDraftStep>(0)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
@@ -239,6 +245,19 @@ export function RevisionPlannerPage({
   const doneWeek = useMemo(
     () => completedEventsThisWeek(events, weekStartKey(today)),
     [events, today],
+  )
+  const courseEventsById = useMemo(() => {
+    const next = new Map<string, RevisionEvent[]>()
+
+    events.forEach((event) => {
+      next.set(event.courseId, [...(next.get(event.courseId) ?? []), event])
+    })
+
+    return next
+  }, [events])
+  const sortedCourses = useMemo(
+    () => [...courses].sort((first, second) => second.updatedAt - first.updatedAt),
+    [courses],
   )
 
   const calendarEvents = useMemo(
@@ -294,10 +313,20 @@ export function RevisionPlannerPage({
     copy.stepDetails,
     copy.stepReview,
   ] as const
+  const rawGoogleCalendarError = googleCalendar.lastError?.trim() ?? ''
+  const normalizedGoogleCalendarError = rawGoogleCalendarError
+    ? /(?:"code"\s*:\s*401|invalid authentication credentials|unauthori[sz]ed|oauth 2 access token)/i.test(
+        rawGoogleCalendarError,
+      )
+      ? copy.googleCalendarAuthExpired
+      : /^(?:\{|\[|<!doctype|<html)/i.test(rawGoogleCalendarError) || rawGoogleCalendarError.length > 280
+        ? copy.googleCalendarSyncFailed
+        : rawGoogleCalendarError
+    : ''
   const googleCalendarStatus = !googleCalendarConfigured
     ? copy.googleCalendarConfiguredNeeded
-    : googleCalendar.lastError
-      ? googleCalendar.lastError
+    : normalizedGoogleCalendarError
+      ? normalizedGoogleCalendarError
       : googleCalendarSessionConnected && googleCalendar.lastSyncedAt
         ? copy.googleCalendarSynced(
             new Date(googleCalendar.lastSyncedAt).toLocaleTimeString(language, {
@@ -481,6 +510,15 @@ export function RevisionPlannerPage({
             <button
               type="button"
               role="tab"
+              aria-selected={tab === 'courses'}
+              className={tab === 'courses' ? 'is-selected' : ''}
+              onClick={() => setTab('courses')}
+            >
+              {copy.coursesTab}
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={tab === 'methods'}
               className={tab === 'methods' ? 'is-selected' : ''}
               onClick={() => setTab('methods')}
@@ -523,7 +561,12 @@ export function RevisionPlannerPage({
                 <span>{copy.todayTab}</span>
                 <strong>{copy.todayQuestion}</strong>
               </div>
-              <button className="gold-action" type="button" onClick={() => openNewCourse()}>
+              <button
+                className="gold-action"
+                type="button"
+                data-guide="revision-course-open"
+                onClick={() => openNewCourse()}
+              >
                 <Plus size={15} strokeWidth={2} />
                 {copy.addCourse}
               </button>
@@ -586,6 +629,22 @@ export function RevisionPlannerPage({
                         <CheckCircle2 size={13} strokeWidth={1.9} />
                         {copy.markDone}
                       </button>
+                      <button
+                        className="ghost-action small"
+                        type="button"
+                        data-guide-course-delete={course?.id}
+                        onClick={() => {
+                          if (
+                            course &&
+                            globalThis.confirm(copy.deleteCourseConfirm(course.title))
+                          ) {
+                            onDeleteCourse(course.id)
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} strokeWidth={1.9} />
+                        {copy.deleteCourse}
+                      </button>
                     </div>
                   </article>
                 )
@@ -599,7 +658,12 @@ export function RevisionPlannerPage({
                   </strong>
                   <span>{copy.todayPlannerHint}</span>
                   <div className="empty-action-row">
-                    <button className="gold-action small" type="button" onClick={() => openNewCourse()}>
+                    <button
+                      className="gold-action small"
+                      type="button"
+                      data-guide="revision-course-open"
+                      onClick={() => openNewCourse()}
+                    >
                       <Plus size={13} strokeWidth={2} />
                       {copy.addFirstCourse}
                     </button>
@@ -615,6 +679,90 @@ export function RevisionPlannerPage({
                 </div>
               ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {tab === 'courses' ? (
+          <div className="revision-planner-courses-view" role="tabpanel">
+            <div className="revision-planner-today-head">
+              <div>
+                <span>{copy.coursesTab}</span>
+                <strong>{copy.plannerSubtitle}</strong>
+              </div>
+              <button
+                className="gold-action"
+                type="button"
+                data-guide="revision-course-open"
+                onClick={() => openNewCourse()}
+              >
+                <Plus size={15} strokeWidth={2} />
+                {copy.addCourse}
+              </button>
+            </div>
+
+            {sortedCourses.length ? (
+              <div className="revision-course-list">
+                {sortedCourses.map((course) => {
+                  const courseEvents = courseEventsById.get(course.id) ?? []
+
+                  return (
+                    <article
+                      className="revision-course-management-card"
+                      key={course.id}
+                      style={{ '--revision-color': course.color } as CSSProperties}
+                    >
+                      <span className="revision-course-management-accent" aria-hidden="true" />
+                      <div className="revision-course-management-copy">
+                        <strong>{course.title}</strong>
+                        <small>
+                          {formatShortDate(course.initialDate, language)}
+                          {course.part ? ` - ${course.part}` : ''}
+                          {course.professor ? ` - ${course.professor}` : ''}
+                        </small>
+                        <span>{copy.courseReminders(courseEvents.length)}</span>
+                      </div>
+                      <div className="revision-course-management-actions">
+                        <button
+                          className="ghost-action small"
+                          type="button"
+                          onClick={() => openEditCourse(course)}
+                        >
+                          <Edit3 size={13} strokeWidth={1.9} />
+                          {copy.edit}
+                        </button>
+                        <button
+                          className="ghost-action small is-danger"
+                          type="button"
+                          data-guide-course-delete={course.id}
+                          onClick={() => {
+                            if (globalThis.confirm(copy.deleteCourseConfirm(course.title))) {
+                              onDeleteCourse(course.id)
+                            }
+                          }}
+                        >
+                          <Trash2 size={13} strokeWidth={1.9} />
+                          {copy.deleteCourse}
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="revision-empty is-actionable">
+                <BookOpen size={20} strokeWidth={1.8} />
+                <strong>{copy.coursesEmpty}</strong>
+                <button
+                  className="gold-action small"
+                  type="button"
+                  data-guide="revision-course-open"
+                  onClick={() => openNewCourse()}
+                >
+                  <Plus size={13} strokeWidth={2} />
+                  {copy.addFirstCourse}
+                </button>
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -670,6 +818,7 @@ export function RevisionPlannerPage({
               <button
                 className="gold-action"
                 type="button"
+                data-guide="revision-course-open"
                 onClick={() => openNewCourse()}
               >
                 <Plus size={15} strokeWidth={2} />
@@ -689,7 +838,12 @@ export function RevisionPlannerPage({
                   <span>{copy.exampleJ3}</span>
                   <span>{copy.exampleJ7}</span>
                 </div>
-                <button className="gold-action small" type="button" onClick={() => openNewCourse()}>
+                <button
+                  className="gold-action small"
+                  type="button"
+                  data-guide="revision-course-open"
+                  onClick={() => openNewCourse()}
+                >
                   <Plus size={13} strokeWidth={2} />
                   {copy.addCourse}
                 </button>
@@ -987,6 +1141,7 @@ export function RevisionPlannerPage({
                     <label>
                       <span>{copy.courseName}</span>
                       <input
+                        data-guide="revision-course-title"
                         value={draft.title}
                         onChange={(event) =>
                           setDraft({ ...draft, title: event.target.value })
@@ -1160,7 +1315,17 @@ export function RevisionPlannerPage({
                   {copy.deleteCourse}
                 </button>
               ) : null}
-              <button className="gold-action" type="submit">
+              <button
+                className="gold-action"
+                type="submit"
+                data-guide={
+                  draftStep === 0
+                    ? 'revision-course-continue-basics'
+                    : draftStep === 1
+                      ? 'revision-course-continue-details'
+                      : 'revision-course-create'
+                }
+              >
                 <Plus size={15} strokeWidth={2} />
                 {draftStep < 2
                   ? copy.nextStep

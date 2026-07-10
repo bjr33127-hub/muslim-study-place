@@ -31,6 +31,7 @@ import { YoutubeWidget } from './components/widgets/YoutubeWidget'
 import { useCloudSync } from './hooks/useCloudSync'
 import { usePersistentState } from './hooks/usePersistentState'
 import { useSocial } from './hooks/useSocial'
+import type { GuideTourStep } from './components/layout/GuidePage'
 import {
   BUILT_IN_BACKGROUNDS,
   DEFAULT_FLAME_EVOLUTION,
@@ -101,6 +102,7 @@ import {
 import {
   normalizePomodoroRun,
   getPomodoroWeekSummary,
+  recordPomodoroStar,
   recordRevisionManualCompletionReward,
 } from './lib/pomodoroRun'
 import {
@@ -261,20 +263,28 @@ function MiniPomodoroButton({
         aria-label={label}
         onClick={onOpen}
       >
-        <svg className="mini-pomodoro-ring" viewBox="0 0 48 48" aria-hidden="true">
-          <circle className="mini-pomodoro-track" cx="24" cy="24" r="20" pathLength="100" />
-          <circle
-            className="mini-pomodoro-progress"
-            cx="24"
-            cy="24"
-            r="20"
-            pathLength="100"
-            strokeDasharray="100"
-            strokeDashoffset={dashOffset}
-          />
-        </svg>
-        <span>{formatCompactTime(remaining)}</span>
-        <small>{modeLabel}</small>
+        <span className="mini-pomodoro-dial" aria-hidden="true">
+          <svg className="mini-pomodoro-ring" viewBox="0 0 48 48">
+            <circle className="mini-pomodoro-track" cx="24" cy="24" r="20" pathLength="100" />
+            <circle
+              className="mini-pomodoro-progress"
+              cx="24"
+              cy="24"
+              r="20"
+              pathLength="100"
+              strokeDasharray="100"
+              strokeDashoffset={dashOffset}
+            />
+          </svg>
+          <Timer size={15} strokeWidth={2} />
+        </span>
+        <span className="mini-pomodoro-copy">
+          <strong>{formatCompactTime(remaining)}</strong>
+          <small>
+            <i className={isRunning ? 'is-live' : ''} />
+            {modeLabel}
+          </small>
+        </span>
       </button>
       <button
         className="mini-pomodoro-toggle"
@@ -615,6 +625,7 @@ function App() {
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [guidePageOpen, setGuidePageOpen] = useState(false)
+  const [guideTourStep, setGuideTourStep] = useState<GuideTourStep>('welcome')
   const [revisionPlannerOpen, setRevisionPlannerOpen] = useState(false)
   const [friendsPageOpen, setFriendsPageOpen] = useState(false)
   const [isMobileWorkspace, setIsMobileWorkspace] = useState(() =>
@@ -1163,6 +1174,7 @@ function App() {
 
   const closeGuidePage = useCallback(() => {
     setGuidePageOpen(false)
+    setGuideTourStep('welcome')
     setMobileWorkspacePage((current) => (current === 'guide' ? null : current))
   }, [])
 
@@ -1176,7 +1188,6 @@ function App() {
         }
 
         setMobileWorkspacePage(id)
-        setGuidePageOpen(false)
         setRevisionPlannerOpen(false)
         setFriendsPageOpen(false)
         focusWidget(id)
@@ -1212,7 +1223,6 @@ function App() {
         }
 
         setMobileWorkspacePage(page)
-        setGuidePageOpen(false)
         setRevisionPlannerOpen(false)
         setFriendsPageOpen(false)
         focusTaskWindow(id)
@@ -1243,7 +1253,6 @@ function App() {
       }
 
       setMobileWorkspacePage('planner')
-      setGuidePageOpen(false)
       setFriendsPageOpen(false)
       setRevisionPlannerOpen(true)
       return
@@ -1255,7 +1264,6 @@ function App() {
     }
 
     setFriendsPageOpen(false)
-    setGuidePageOpen(false)
     setRevisionPlannerOpen(true)
   }, [
     closeRevisionPlanner,
@@ -1272,7 +1280,6 @@ function App() {
       }
 
       setMobileWorkspacePage('friends')
-      setGuidePageOpen(false)
       setRevisionPlannerOpen(false)
       setFriendsPageOpen(true)
       return
@@ -1284,18 +1291,16 @@ function App() {
     }
 
     setRevisionPlannerOpen(false)
-    setGuidePageOpen(false)
     setFriendsPageOpen(true)
   }, [closeFriendsPage, friendsPageOpen, isMobileWorkspace, mobileWorkspacePage])
 
   const handleGuidePageDockToggle = useCallback(() => {
     if (isMobileWorkspace) {
-      if (guidePageOpen && mobileWorkspacePage === 'guide') {
+      if (guidePageOpen) {
         closeGuidePage()
         return
       }
 
-      setMobileWorkspacePage('guide')
       setRevisionPlannerOpen(false)
       setFriendsPageOpen(false)
       setGuidePageOpen(true)
@@ -1310,7 +1315,81 @@ function App() {
     setRevisionPlannerOpen(false)
     setFriendsPageOpen(false)
     setGuidePageOpen(true)
-  }, [closeGuidePage, guidePageOpen, isMobileWorkspace, mobileWorkspacePage])
+  }, [closeGuidePage, guidePageOpen, isMobileWorkspace])
+
+  const prepareGuideStep = useCallback(
+    (step: GuideTourStep) => {
+      setGuideTourStep(step)
+      if (step === 'welcome' || step === 'complete') {
+        return
+      }
+
+      const keepsPlannerOpen =
+        step === 'course-open' ||
+        step === 'course-name' ||
+        step === 'course-basics' ||
+        step === 'course-details' ||
+        step === 'course-create' ||
+        step === 'course-delete'
+
+      setSettingsOpen(false)
+      setRevisionPlannerOpen(keepsPlannerOpen)
+      setFriendsPageOpen(false)
+
+      if (step === 'pomodoro') {
+        setMobileWorkspacePage('pomodoro')
+        focusWidget('pomodoro')
+        return
+      }
+
+      if (step === 'tasks') {
+        const firstTaskWindow = displayedTaskWindows[0]
+
+        if (firstTaskWindow) {
+          setMobileWorkspacePage(taskMobilePage(firstTaskWindow.id))
+          focusTaskWindow(firstTaskWindow.id)
+        }
+        return
+      }
+
+      if (step === 'revisions') {
+        setMobileWorkspacePage(null)
+        return
+      }
+
+      if (keepsPlannerOpen) {
+        setMobileWorkspacePage(null)
+        return
+      }
+
+      if (step === 'backgrounds') {
+        setMobileWorkspacePage(null)
+        hideWidget('backgrounds')
+        return
+      }
+
+      if (step === 'background-select') {
+        setMobileWorkspacePage('backgrounds')
+        focusWidget('backgrounds')
+        return
+      }
+
+      if (step === 'youtube') {
+        setMobileWorkspacePage(null)
+        hideWidget('youtube')
+        return
+      }
+
+      if (step === 'youtube-url' || step === 'youtube-watched') {
+        setMobileWorkspacePage('youtube')
+        focusWidget('youtube')
+        return
+      }
+
+      setMobileWorkspacePage(null)
+    },
+    [displayedTaskWindows, focusTaskWindow, focusWidget, hideWidget],
+  )
 
   const handleUpload = async (files: FileList | null) => {
     if (!files?.length) {
@@ -2297,6 +2376,9 @@ function App() {
           normalizeRevisionEvents(current),
         ),
       )
+      window.dispatchEvent(new CustomEvent('msp:guide-action', {
+        detail: { action: 'revision-course-saved', id: course.id },
+      }))
     },
     [
       revisionCourses,
@@ -2323,7 +2405,17 @@ function App() {
     if (linkedTaskIds.length) {
       deleteTasks(linkedTaskIds)
     }
+    window.dispatchEvent(new CustomEvent('msp:guide-action', {
+      detail: { action: 'revision-course-deleted', id: courseId },
+    }))
   }
+
+  const selectBackground = useCallback((id: string) => {
+    setSelectedBackgroundId(id)
+    window.dispatchEvent(new CustomEvent('msp:guide-action', {
+      detail: { action: 'background-selected', id },
+    }))
+  }, [setSelectedBackgroundId])
 
   const deleteRevisionEvent = (eventId: string) => {
     const event = revisionEvents.find((item) => item.id === eventId)
@@ -2631,16 +2723,31 @@ function App() {
 
         setRevisionGoogleCalendar(nextState)
       } catch (error) {
+        const errorCode = error instanceof Error ? error.message : ''
+
+        if (errorCode === 'google_calendar_auth_expired') {
+          googleCalendarTokenRef.current = null
+          setGoogleCalendarSessionConnected(false)
+        }
+
         setRevisionGoogleCalendar((current) => ({
           ...normalizeGoogleCalendarSync(current),
           enabled: true,
-          lastError: error instanceof Error ? error.message : 'calendar_sync_failed',
+          lastError:
+            errorCode === 'google_calendar_auth_expired'
+              ? copy.revisions.googleCalendarAuthExpired
+              : errorCode === 'google_calendar_rate_limited'
+                ? copy.revisions.googleCalendarRateLimited
+                : copy.revisions.googleCalendarSyncFailed,
         }))
       }
     },
     [
       copy.revisions.googleCalendarConfiguredNeeded,
+      copy.revisions.googleCalendarAuthExpired,
       copy.revisions.googleCalendarNeedsConnect,
+      copy.revisions.googleCalendarRateLimited,
+      copy.revisions.googleCalendarSyncFailed,
       revisionCourses,
       revisionEvents,
       revisionGoogleCalendar,
@@ -2663,10 +2770,19 @@ function App() {
       setGoogleCalendarSessionConnected(false)
       setRevisionGoogleCalendar((current) => ({
         ...normalizeGoogleCalendarSync(current),
-        lastError: error instanceof Error ? error.message : 'calendar_connect_failed',
+        lastError:
+          error instanceof Error &&
+          error.message === 'google_calendar_rate_limited'
+            ? copy.revisions.googleCalendarRateLimited
+            : copy.revisions.googleCalendarAuthExpired,
       }))
     }
-  }, [performRevisionGoogleCalendarSync, setRevisionGoogleCalendar])
+  }, [
+    copy.revisions.googleCalendarAuthExpired,
+    copy.revisions.googleCalendarRateLimited,
+    performRevisionGoogleCalendarSync,
+    setRevisionGoogleCalendar,
+  ])
 
   const syncRevisionGoogleCalendarNow = useCallback(async () => {
     if (!googleCalendarTokenRef.current) {
@@ -2761,6 +2877,72 @@ function App() {
     triggerTaskUnlock,
     updateTaskPomodoro,
   ])
+
+  const completeTimerSegment = useCallback(() => {
+    if (timerMode !== 'focus') {
+      setTimerMode('focus')
+      setTimerRunning(run.autoCycle)
+      return timerSeconds('focus', timerSettings)
+    }
+
+    completeFocusSession()
+    const target = clampPomodoros(run.targetPomodoros)
+    const nextRunCount = run.currentRun + 1
+    const nextCompleted = Math.min(run.completedInTarget + 1, target)
+    const objectiveComplete = nextCompleted >= target
+
+    setPomodoroRun(
+      recordPomodoroStar(
+        {
+          ...run,
+          targetPomodoros: target,
+          completedInTarget: nextCompleted,
+        },
+        nextRunCount,
+      ),
+    )
+
+    if (objectiveComplete) {
+      setTimerRunning(false)
+      return 0
+    }
+
+    const nextMode: TimerMode =
+      nextRunCount % clampPomodoros(timerSettings.longBreakEvery) === 0
+        ? 'longBreak'
+        : 'shortBreak'
+
+    setTimerMode(nextMode)
+    setTimerRunning(run.autoCycle)
+    return timerSeconds(nextMode, timerSettings)
+  }, [
+    completeFocusSession,
+    run,
+    setPomodoroRun,
+    setTimerMode,
+    setTimerRunning,
+    timerMode,
+    timerSettings,
+  ])
+
+  useEffect(() => {
+    if (!timerRunning) {
+      return
+    }
+
+    const interval = window.setInterval(() => {
+      setTimerRemaining((current) => {
+        if (current > 1) {
+          return current - 1
+        }
+
+        window.clearInterval(interval)
+        return completeTimerSegment()
+      })
+    }, 1_000)
+
+    return () => window.clearInterval(interval)
+  }, [completeTimerSegment, setTimerRemaining, timerRunning])
 
   const nextSessionToday = dateKey()
   const nextSessionTodayRevisions = todayRevisionEvents(
@@ -2876,7 +3058,7 @@ function App() {
             onRunChange={changePomodoroRun}
             onTargetChange={updatePomodoroTarget}
             onStartFreeFocus={startFreeFocus}
-            onFocusComplete={completeFocusSession}
+            onCompleteSegment={completeTimerSegment}
           />
         )
       case 'todo':
@@ -2911,7 +3093,7 @@ function App() {
             backgrounds={backgrounds}
             selectedId={activeBackground.id}
             uploadError={uploadError}
-            onSelect={setSelectedBackgroundId}
+            onSelect={selectBackground}
             onUpload={handleUpload}
             onDeleteUpload={handleDeleteUpload}
           />
@@ -2997,8 +3179,7 @@ function App() {
     revisionPlannerOpen && (!isMobileWorkspace || mobileWorkspacePage === 'planner')
   const friendsPageVisible =
     friendsPageOpen && (!isMobileWorkspace || mobileWorkspacePage === 'friends')
-  const guidePageVisible =
-    guidePageOpen && (!isMobileWorkspace || mobileWorkspacePage === 'guide')
+  const guidePageVisible = guidePageOpen
   const timerDuration = Math.max(timerSeconds(timerMode, timerSettings), 1)
   const miniPomodoroProgress = Math.round(
     (Math.min(Math.max(timerDuration - timerRemaining, 0), timerDuration) /
@@ -3023,7 +3204,6 @@ function App() {
   const openMiniPomodoro = useCallback(() => {
     if (isMobileWorkspace) {
       setMobileWorkspacePage('pomodoro')
-      setGuidePageOpen(false)
       setRevisionPlannerOpen(false)
       setFriendsPageOpen(false)
     }
@@ -3122,12 +3302,17 @@ function App() {
       />
       {guidePageVisible ? (
         <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
-          <GuidePage language={language} onClose={closeGuidePage} />
+          <GuidePage
+            language={language}
+            onClose={closeGuidePage}
+            onPrepareStep={prepareGuideStep}
+          />
         </Suspense>
       ) : null}
       {revisionPlannerVisible ? (
         <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
           <RevisionPlannerPage
+            key={guideTourStep === 'course-delete' ? 'guide-course-delete' : 'planner'}
             copy={copy.revisions}
             todoCopy={copy.todo}
             language={language}
@@ -3138,6 +3323,7 @@ function App() {
             googleCalendar={revisionGoogleCalendar}
             googleCalendarConfigured={isGoogleCalendarConfigured()}
             googleCalendarSessionConnected={googleCalendarSessionConnected}
+            guideStep={guideTourStep}
             onClose={closeRevisionPlanner}
             onSettingsChange={changeRevisionSettings}
             onSaveCourse={saveRevisionCourse}

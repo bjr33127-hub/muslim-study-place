@@ -301,9 +301,8 @@ export function FriendsPage({
   const rest = leaderboard.slice(3)
   const maxStars = Math.max(1, ...leaderboard.map((entry) => entry.totalStars))
   const messageText = message ? copyText.message(message) : ''
-  const setupRequired = message === 'social_setup_required'
   const friendCodeAvailable = Boolean(profile?.friendCode)
-  const friendSearchAvailable = friendCodeAvailable && !setupRequired
+  const friendSearchAvailable = Boolean(user) && friendCodeAvailable
   const selfDetails = useMemo<SocialStatsProfile | null>(() => {
     const leaderboardSelf = leaderboard.find((entry) => entry.isSelf)
 
@@ -374,6 +373,8 @@ export function FriendsPage({
               <button
                 key={id}
                 type="button"
+                role="tab"
+                aria-selected={tab === id}
                 className={tab === id ? 'is-selected' : ''}
                 onClick={() => setTab(id as SocialPageTab)}
               >

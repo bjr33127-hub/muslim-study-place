@@ -120,7 +120,7 @@ export function useSocial({ client, user, stats }: UseSocialArgs) {
     }
   }, [stats, user])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     if (!client || !user) {
       setProfile(null)
       setFriends([])
@@ -130,7 +130,9 @@ export function useSocial({ client, user, stats }: UseSocialArgs) {
       return
     }
 
-    setLoading(true)
+    if (!silent) {
+      setLoading(true)
+    }
 
     let nextMessage = ''
 
@@ -170,14 +172,40 @@ export function useSocial({ client, user, stats }: UseSocialArgs) {
     }
 
     setMessage(nextMessage)
-    setLoading(false)
+    if (!silent) {
+      setLoading(false)
+    }
   }, [client, user])
 
   useEffect(() => {
-    window.setTimeout(() => {
-      void refresh()
+    const timeout = window.setTimeout(() => {
+      void refresh(true)
     }, 0)
+
+    return () => window.clearTimeout(timeout)
   }, [refresh])
+
+  useEffect(() => {
+    if (!client || !user) {
+      return
+    }
+
+    const refreshSocialData = () => {
+      if (document.visibilityState === 'visible') {
+        void refresh(true)
+      }
+    }
+    const interval = window.setInterval(refreshSocialData, 15_000)
+
+    window.addEventListener('focus', refreshSocialData)
+    document.addEventListener('visibilitychange', refreshSocialData)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshSocialData)
+      document.removeEventListener('visibilitychange', refreshSocialData)
+    }
+  }, [client, refresh, user])
 
   useEffect(() => {
     window.clearTimeout(statsTimerRef.current)
@@ -188,7 +216,7 @@ export function useSocial({ client, user, stats }: UseSocialArgs) {
 
     statsTimerRef.current = window.setTimeout(() => {
       void upsertUserSocialStats(client, currentStats)
-        .then(refresh)
+        .then(() => refresh(true))
         .catch((error: unknown) =>
           setMessage(socialErrorKey(error, 'stats_sync_failed')),
         )

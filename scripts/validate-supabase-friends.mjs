@@ -16,6 +16,7 @@ select
   source.id as source_id,
   source.email as source_email,
   target.id as target_id,
+  target.email as target_email,
   false as created_invite,
   null::uuid as invite_id
 from public.profiles source
@@ -118,6 +119,66 @@ begin
     select 1 from public.get_friend_invites() invite where invite.id = saved.id
   ) then
     raise exception 'friend_invite_missing_from_requests';
+  end if;
+end $$;
+
+reset role;
+
+select set_config('request.jwt.claim.sub', target_id::text, true)
+from msp_friend_flow_test;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', target_id, 'email', target_email, 'role', 'authenticated')::text,
+  true
+)
+from msp_friend_flow_test;
+
+set local role authenticated;
+
+do $$
+declare
+  saved public.friend_invites;
+begin
+  select * into saved
+  from public.respond_friend_invite(
+    (select invite_id from msp_friend_flow_test),
+    'accept'
+  );
+
+  if saved.status <> 'accepted' then
+    raise exception 'friend_invite_was_not_accepted';
+  end if;
+
+  if not exists (
+    select 1
+    from public.get_friend_list() friend
+    where friend.user_id = (select source_id from msp_friend_flow_test)
+  ) then
+    raise exception 'source_missing_from_target_friend_list';
+  end if;
+end $$;
+
+reset role;
+
+select set_config('request.jwt.claim.sub', source_id::text, true)
+from msp_friend_flow_test;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', source_id, 'email', source_email, 'role', 'authenticated')::text,
+  true
+)
+from msp_friend_flow_test;
+
+set local role authenticated;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from public.get_friend_list() friend
+    where friend.user_id = (select target_id from msp_friend_flow_test)
+  ) then
+    raise exception 'target_missing_from_source_friend_list';
   end if;
 end $$;
 

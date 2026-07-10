@@ -309,8 +309,7 @@ export function PomodoroWidget({
           aria-label={clockLabel}
           tabIndex={0}
         >
-          <span aria-hidden="true">{currentClockText.slice(0, 2)}</span>
-          <span aria-hidden="true">{currentClockText.slice(-2)}</span>
+          <span aria-hidden="true">{currentClockText}</span>
           <span className="pomodoro-clock-tooltip" role="tooltip">
             {clockTooltip}
           </span>

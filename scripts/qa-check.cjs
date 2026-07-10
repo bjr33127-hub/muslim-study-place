@@ -2114,9 +2114,7 @@ async function main() {
       const stage = document.querySelector('.timer-orbital')
 
       return {
-        text: Array.from(time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)') || [])
-          .map((line) => line.textContent?.trim() || '')
-          .join(''),
+        text: time?.querySelector(':scope > span:not(.pomodoro-clock-tooltip)')?.textContent?.trim() || '',
         dateTime: time?.getAttribute('datetime') || '',
         tabIndex: time?.tabIndex ?? -1,
         tooltip: tooltip?.textContent?.trim() || '',
@@ -2146,15 +2144,15 @@ async function main() {
   assert(initial.backgroundWatermark === 'Train', 'Background name should render as a discreet watermark')
   assert(initial.unlockCardCount === 0, 'Daily check-in alone should not show the task unlock animation')
   assert(
-    /^\d{4}$/.test(initial.pomodoroClock.text),
-    'Expanded Pomodoro should display the real time across two lines without seconds',
+    /^\d{2}:\d{2}$/.test(initial.pomodoroClock.text),
+    'Expanded Pomodoro should display the real time without seconds',
   )
   assert(
     Boolean(Date.parse(initial.pomodoroClock.dateTime)),
     'Expanded Pomodoro clock should expose a machine-readable dateTime',
   )
   assert(initial.pomodoroClock.tabIndex === 0, 'Expanded Pomodoro clock should be keyboard focusable')
-  assert(initial.pomodoroClock.lineCount === 2, 'Expanded Pomodoro clock should render the hour on two vertical lines')
+  assert(initial.pomodoroClock.lineCount === 1, 'Expanded Pomodoro clock should render the hour on one stretched line')
   assert(
     initial.pomodoroClock.stage?.height > initial.pomodoroClock.stage?.width,
     'Expanded Pomodoro clock should use a vertical glass stage',

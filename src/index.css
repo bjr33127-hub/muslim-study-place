@@ -6361,7 +6361,6 @@ button.flame-quest {
   z-index: 0;
   display: grid;
   place-content: center;
-  gap: 1px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--mode-accent) 32%, rgba(255, 249, 233, 0.2));
   border-radius: 28px;
@@ -6376,11 +6375,11 @@ button.flame-quest {
     0 18px 42px rgba(0, 0, 0, 0.3),
     0 0 28px color-mix(in srgb, var(--mode-glow) 46%, transparent);
   backdrop-filter: blur(22px) saturate(1.18);
-  font-size: 94px;
+  font-size: 76px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.105em;
-  line-height: 0.69;
+  letter-spacing: -0.075em;
+  line-height: 1;
   outline: none;
   text-align: center;
   text-shadow: 0 0 32px color-mix(in srgb, var(--mode-glow) 82%, transparent);
@@ -6398,14 +6397,7 @@ button.flame-quest {
 
 .pomodoro-ambient-clock > span:not(.pomodoro-clock-tooltip) {
   opacity: 0.3;
-}
-
-.pomodoro-ambient-clock > span:first-child {
-  transform: translateY(-19px);
-}
-
-.pomodoro-ambient-clock > span:nth-child(2) {
-  transform: translateY(19px);
+  transform: scaleY(2.18);
 }
 
 .pomodoro-ambient-clock:focus-visible {

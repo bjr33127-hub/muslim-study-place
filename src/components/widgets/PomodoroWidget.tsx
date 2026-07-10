@@ -1,4 +1,5 @@
 import {
+  Clock3,
   Coffee,
   Flame,
   Minus,
@@ -16,7 +17,12 @@ import type { ComponentType } from 'react'
 import type { AppCopy } from '../../lib/i18n'
 import { timerSeconds } from '../../lib/timer'
 import { clampPomodoros } from '../../lib/todos'
-import type { PomodoroRunState, TimerMode, TimerSettings } from '../../types/app'
+import type {
+  AppLanguage,
+  PomodoroRunState,
+  TimerMode,
+  TimerSettings,
+} from '../../types/app'
 
 const TIMER_MODES: TimerMode[] = ['focus', 'shortBreak', 'longBreak']
 
@@ -38,6 +44,14 @@ function formatTime(seconds: number) {
     2,
     '0',
   )}`
+}
+
+function formatClockTime(timestamp: number, language: AppLanguage) {
+  return new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(timestamp)
 }
 
 function scheduleTimerChime(context: AudioContext) {
@@ -75,6 +89,9 @@ function scheduleTimerChime(context: AudioContext) {
 
 type PomodoroWidgetProps = {
   copy: AppCopy['pomodoro']
+  currentTime: number
+  estimatedEndAt: number
+  language: AppLanguage
   mode: TimerMode
   remaining: number
   isRunning: boolean
@@ -96,6 +113,9 @@ type PomodoroWidgetProps = {
 
 export function PomodoroWidget({
   copy,
+  currentTime,
+  estimatedEndAt,
+  language,
   mode,
   remaining,
   isRunning,
@@ -123,6 +143,15 @@ export function PomodoroWidget({
   const elapsed = Math.min(Math.max(duration - remaining, 0), duration)
   const progress = objectiveFinished ? 100 : Math.round((elapsed / duration) * 100)
   const ActiveModeIcon = modeIcons[mode]
+  const currentClockText = formatClockTime(currentTime, language)
+  const estimatedEndText = formatClockTime(
+    estimatedEndAt,
+    language,
+  )
+  const clockTooltip = isRunning
+    ? copy.estimatedEnd(estimatedEndText)
+    : copy.estimatedEndIfStarted(estimatedEndText)
+  const clockLabel = `${copy.currentTime(currentClockText)}. ${clockTooltip}`
 
   const getAudioContext = useCallback(() => {
     if (audioContextRef.current) {
@@ -300,6 +329,19 @@ export function PomodoroWidget({
           <div className="timer-readout">{formatTime(remaining)}</div>
           <small>{copy.modes[mode]}</small>
         </div>
+        <span className="pomodoro-real-clock">
+          <Clock3 size={12} strokeWidth={1.9} aria-hidden="true" />
+          <time
+            dateTime={new Date(currentTime).toISOString()}
+            aria-label={clockLabel}
+            tabIndex={0}
+          >
+            {currentClockText}
+          </time>
+          <span className="pomodoro-clock-tooltip" role="tooltip">
+            {clockTooltip}
+          </span>
+        </span>
       </div>
 
       <div className="pomodoro-chain" aria-label={copy.continuousAria}>

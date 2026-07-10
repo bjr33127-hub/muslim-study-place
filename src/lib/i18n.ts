@@ -320,6 +320,10 @@ export const COPY = {
       start: 'Demarrer',
       reset: 'Reset',
       skipBreak: 'Passer',
+      currentTime: (value: string) => `Heure actuelle : ${value}`,
+      estimatedEnd: (value: string) => `Fin estimee a ${value}`,
+      estimatedEndIfStarted: (value: string) =>
+        `Fin si demarre maintenant : ${value}`,
     },
     todo: {
       addPlaceholder: 'Ajouter une tache',
@@ -1003,6 +1007,10 @@ export const COPY = {
       start: 'Start',
       reset: 'Reset',
       skipBreak: 'Skip',
+      currentTime: (value: string) => `Current time: ${value}`,
+      estimatedEnd: (value: string) => `Estimated finish at ${value}`,
+      estimatedEndIfStarted: (value: string) =>
+        `Finish if started now: ${value}`,
     },
     todo: {
       addPlaceholder: 'Add task',

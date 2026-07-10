@@ -230,6 +230,50 @@ function formatCompactTime(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
 }
 
+function formatClockTime(timestamp: number, language: AppLanguage) {
+  return new Intl.DateTimeFormat(language === 'fr' ? 'fr-FR' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(timestamp)
+}
+
+function useCurrentMinute() {
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
+
+  useEffect(() => {
+    let timeout = 0
+
+    const scheduleNextMinute = () => {
+      window.clearTimeout(timeout)
+      const now = Date.now()
+      timeout = window.setTimeout(() => {
+        setCurrentTime(Date.now())
+        scheduleNextMinute()
+      }, 60_000 - (now % 60_000) + 25)
+    }
+
+    const resyncClock = () => {
+      if (document.visibilityState === 'visible') {
+        setCurrentTime(Date.now())
+        scheduleNextMinute()
+      }
+    }
+
+    scheduleNextMinute()
+    window.addEventListener('focus', resyncClock)
+    document.addEventListener('visibilitychange', resyncClock)
+
+    return () => {
+      window.clearTimeout(timeout)
+      window.removeEventListener('focus', resyncClock)
+      document.removeEventListener('visibilitychange', resyncClock)
+    }
+  }, [])
+
+  return currentTime
+}
+
 type MiniPomodoroButtonProps = {
   mode: TimerMode
   modeLabel: string
@@ -238,6 +282,10 @@ type MiniPomodoroButtonProps = {
   isRunning: boolean
   label: string
   toggleLabel: string
+  clockText: string
+  clockDateTime: string
+  clockLabel: string
+  clockTooltip: string
   onOpen: () => void
   onToggleRunning: () => void
 }
@@ -250,6 +298,10 @@ function MiniPomodoroButton({
   isRunning,
   label,
   toggleLabel,
+  clockText,
+  clockDateTime,
+  clockLabel,
+  clockTooltip,
   onOpen,
   onToggleRunning,
 }: MiniPomodoroButtonProps) {
@@ -260,7 +312,8 @@ function MiniPomodoroButton({
       <button
         className="mini-pomodoro-orb"
         type="button"
-        aria-label={label}
+        aria-label={`${label}. ${clockLabel}. ${clockTooltip}`}
+        title={clockTooltip}
         onClick={onOpen}
       >
         <span className="mini-pomodoro-dial" aria-hidden="true">
@@ -283,6 +336,10 @@ function MiniPomodoroButton({
           <small>
             <i className={isRunning ? 'is-live' : ''} />
             {modeLabel}
+            <span className="mini-pomodoro-clock-separator" aria-hidden="true">
+              ·
+            </span>
+            <time dateTime={clockDateTime}>{clockText}</time>
           </small>
         </span>
       </button>
@@ -389,6 +446,7 @@ function App() {
   )
   const language = normalizeLanguage(languageState)
   const copy = useMemo(() => getCopy(language), [language])
+  const currentTime = useCurrentMinute()
   const cloudSync = useCloudSync()
   const widgetLabels = copy.widgets
   const [storedLayouts, setLayouts] = usePersistentState(
@@ -510,10 +568,35 @@ function App() {
     timerSeconds('focus', DEFAULT_TIMER_SETTINGS),
   )
   const [timerRunning, setTimerRunning] = usePersistentState('timer:running', false)
+  const timerEndAtRef = useRef<number | null>(null)
+  const previousTimerSnapshotRef = useRef({
+    remaining: timerRemaining,
+    running: timerRunning,
+  })
   const [pomodoroRun, setPomodoroRun] = usePersistentState(
     'pomodoroRun',
     DEFAULT_POMODORO_RUN,
   )
+
+  useEffect(() => {
+    const previous = previousTimerSnapshotRef.current
+
+    if (
+      timerRunning &&
+      (!previous.running || timerRemaining > previous.remaining || !timerEndAtRef.current)
+    ) {
+      timerEndAtRef.current = Date.now() + timerRemaining * 1_000
+    }
+
+    if (!timerRunning) {
+      timerEndAtRef.current = null
+    }
+
+    previousTimerSnapshotRef.current = {
+      remaining: timerRemaining,
+      running: timerRunning,
+    }
+  }, [timerRemaining, timerRunning])
   const [taskPomodoroMemory, setTaskPomodoroMemory] = usePersistentState<
     Record<string, TaskPomodoroMemory>
   >('taskPomodoroMemory', {})
@@ -3041,6 +3124,13 @@ function App() {
         return (
           <PomodoroWidget
             copy={copy.pomodoro}
+            currentTime={currentTime}
+            estimatedEndAt={
+              timerRunning
+                ? (timerEndAtRef.current ?? currentTime + timerRemaining * 1_000)
+                : currentTime + timerRemaining * 1_000
+            }
+            language={language}
             mode={timerMode}
             remaining={timerRemaining}
             isRunning={timerRunning}
@@ -3255,6 +3345,23 @@ function App() {
               isRunning={timerRunning}
               label={`${copy.widgets.pomodoro} - ${formatCompactTime(timerRemaining)}`}
               toggleLabel={timerRunning ? copy.pomodoro.pause : copy.pomodoro.start}
+              clockText={formatClockTime(currentTime, language)}
+              clockDateTime={new Date(currentTime).toISOString()}
+              clockLabel={copy.pomodoro.currentTime(
+                formatClockTime(currentTime, language),
+              )}
+              clockTooltip={
+                timerRunning
+                  ? copy.pomodoro.estimatedEnd(
+                      formatClockTime(
+                        timerEndAtRef.current ?? currentTime + timerRemaining * 1_000,
+                        language,
+                      ),
+                    )
+                  : copy.pomodoro.estimatedEndIfStarted(
+                      formatClockTime(currentTime + timerRemaining * 1_000, language),
+                    )
+              }
               onOpen={openMiniPomodoro}
               onToggleRunning={toggleMiniPomodoroRunning}
             />

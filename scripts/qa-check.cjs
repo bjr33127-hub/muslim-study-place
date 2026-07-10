@@ -2108,6 +2108,17 @@ async function main() {
           }
         : null
     })(),
+    pomodoroClock: (() => {
+      const time = document.querySelector('.pomodoro-real-clock time')
+      const tooltip = document.querySelector('.pomodoro-clock-tooltip')
+
+      return {
+        text: time?.textContent?.trim() || '',
+        dateTime: time?.getAttribute('datetime') || '',
+        tabIndex: time?.tabIndex ?? -1,
+        tooltip: tooltip?.textContent?.trim() || '',
+      }
+    })(),
     memoryStore: Boolean(indexedDB),
   }))
 
@@ -2127,6 +2138,19 @@ async function main() {
   assert(!initial.topbarText.includes('Train'), 'Topbar should not include the background name')
   assert(initial.backgroundWatermark === 'Train', 'Background name should render as a discreet watermark')
   assert(initial.unlockCardCount === 0, 'Daily check-in alone should not show the task unlock animation')
+  assert(
+    /^\d{2}:\d{2}$/.test(initial.pomodoroClock.text),
+    'Expanded Pomodoro should display the real time without seconds',
+  )
+  assert(
+    Boolean(Date.parse(initial.pomodoroClock.dateTime)),
+    'Expanded Pomodoro clock should expose a machine-readable dateTime',
+  )
+  assert(initial.pomodoroClock.tabIndex === 0, 'Expanded Pomodoro clock should be keyboard focusable')
+  assert(
+    /Fin si demarre maintenant/.test(initial.pomodoroClock.tooltip),
+    'Paused Pomodoro should explain the estimated finish time',
+  )
   assert(initial.badgeSizes.length === 3, 'Expected three topbar metric badges')
   assert(
     Math.max(...initial.badgeSizes.map((size) => size.width)) -
@@ -3690,12 +3714,39 @@ async function main() {
   await page.locator('.dock-widget-pomodoro').click()
   await page.waitForTimeout(250)
   assert(await page.locator('.mini-pomodoro').isVisible(), 'Reduced Pomodoro should leave a mini timer visible')
+  assert(
+    /^\d{2}:\d{2}$/.test(await page.locator('.mini-pomodoro-copy time').innerText()),
+    'Reduced Pomodoro should display the real time without seconds',
+  )
+  assert(
+    /(Fin si demarre maintenant|Finish if started now)/.test(
+      (await page.locator('.mini-pomodoro-orb').getAttribute('title')) || '',
+    ),
+    'Reduced paused Pomodoro should expose the estimated finish tooltip',
+  )
   const miniPomodoroGap = await page.evaluate(() => {
     const timer = document.querySelector('.mini-pomodoro-copy strong')?.getBoundingClientRect()
     const control = document.querySelector('.mini-pomodoro-toggle')?.getBoundingClientRect()
     return timer && control ? control.left - timer.right : 0
   })
   assert(miniPomodoroGap >= 10, 'Reduced Pomodoro control is too close to the countdown')
+  await page.locator('.mini-pomodoro-toggle').click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.mini-pomodoro-orb')
+      ?.getAttribute('title')
+      ?.match(/^(Fin estimee a|Estimated finish at)/),
+  )
+  const runningMiniEstimate = await page
+    .locator('.mini-pomodoro-orb')
+    .getAttribute('title')
+  await page.waitForTimeout(1100)
+  assert(
+    (await page.locator('.mini-pomodoro-orb').getAttribute('title')) ===
+      runningMiniEstimate,
+    'Running Pomodoro should keep its estimated finish stable between countdown ticks',
+  )
+  await page.locator('.mini-pomodoro-toggle').click()
   await page.locator('.mini-pomodoro-orb').click()
   await page.waitForSelector('.widget-frame-pomodoro')
   assert(

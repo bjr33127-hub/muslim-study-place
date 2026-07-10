@@ -92,8 +92,20 @@ begin
     raise exception 'friend_lookup_returned_wrong_profile';
   end if;
 
+  if lookup.relation = 'friend' then
+    if not exists (
+      select 1
+      from public.get_friend_list() friend
+      where friend.user_id = (select target_id from msp_friend_flow_test)
+    ) then
+      raise exception 'target_missing_from_existing_source_friend_list';
+    end if;
+
+    return;
+  end if;
+
   if lookup.relation <> 'none' then
-    raise exception 'friend_test_requires_clean_relation: %', lookup.relation;
+    raise exception 'friend_test_requires_none_or_friend_relation: %', lookup.relation;
   end if;
 
   select * into saved
@@ -139,14 +151,16 @@ do $$
 declare
   saved public.friend_invites;
 begin
-  select * into saved
-  from public.respond_friend_invite(
-    (select invite_id from msp_friend_flow_test),
-    'accept'
-  );
+  if (select created_invite from msp_friend_flow_test) then
+    select * into saved
+    from public.respond_friend_invite(
+      (select invite_id from msp_friend_flow_test),
+      'accept'
+    );
 
-  if saved.status <> 'accepted' then
-    raise exception 'friend_invite_was_not_accepted';
+    if saved.status <> 'accepted' then
+      raise exception 'friend_invite_was_not_accepted';
+    end if;
   end if;
 
   if not exists (

@@ -143,6 +143,7 @@ export function PomodoroWidget({
   const progress = objectiveFinished ? 100 : Math.round((elapsed / duration) * 100)
   const ActiveModeIcon = modeIcons[mode]
   const currentClockText = formatClockTime(currentTime, language)
+  const [currentClockHours, currentClockMinutes] = currentClockText.split(':')
   const estimatedEndText = formatClockTime(
     estimatedEndAt,
     language,
@@ -309,7 +310,12 @@ export function PomodoroWidget({
           aria-label={clockLabel}
           tabIndex={0}
         >
-          <span aria-hidden="true">{currentClockText}</span>
+          <span className="pomodoro-clock-hours" aria-hidden="true">
+            {currentClockHours}
+          </span>
+          <span className="pomodoro-clock-minutes" aria-hidden="true">
+            {currentClockMinutes}
+          </span>
           <span className="pomodoro-clock-tooltip" role="tooltip">
             {clockTooltip}
           </span>

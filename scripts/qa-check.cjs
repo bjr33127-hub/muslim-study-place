@@ -2112,13 +2112,27 @@ async function main() {
       const time = document.querySelector('.pomodoro-ambient-clock')
       const tooltip = document.querySelector('.pomodoro-clock-tooltip')
       const stage = document.querySelector('.timer-orbital')
+      const ring = document.querySelector('.timer-ring')
+      const body = document.querySelector('.widget-frame-pomodoro .widget-body')
 
       return {
-        text: time?.querySelector(':scope > span:not(.pomodoro-clock-tooltip)')?.textContent?.trim() || '',
+        text: Array.from(time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)') || [])
+          .map((segment) => segment.textContent?.trim() || '')
+          .join(':'),
         dateTime: time?.getAttribute('datetime') || '',
         tabIndex: time?.tabIndex ?? -1,
         tooltip: tooltip?.textContent?.trim() || '',
-        lineCount: time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)').length || 0,
+        segmentCount: time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)').length || 0,
+        segmentCenters: Array.from(
+          time?.querySelectorAll(':scope > span:not(.pomodoro-clock-tooltip)') || [],
+        ).map((segment) => {
+          const rect = segment.getBoundingClientRect()
+          return Math.round(rect.left + rect.width / 2)
+        }),
+        ringCenter: ring
+          ? Math.round(ring.getBoundingClientRect().left + ring.getBoundingClientRect().width / 2)
+          : 0,
+        bodyFits: body ? body.scrollHeight <= body.clientHeight : false,
         stage: stage
           ? { width: Math.round(stage.getBoundingClientRect().width), height: Math.round(stage.getBoundingClientRect().height) }
           : null,
@@ -2152,10 +2166,16 @@ async function main() {
     'Expanded Pomodoro clock should expose a machine-readable dateTime',
   )
   assert(initial.pomodoroClock.tabIndex === 0, 'Expanded Pomodoro clock should be keyboard focusable')
-  assert(initial.pomodoroClock.lineCount === 1, 'Expanded Pomodoro clock should render the hour on one stretched line')
+  assert(initial.pomodoroClock.segmentCount === 2, 'Expanded Pomodoro clock should render hours and minutes as two side segments')
   assert(
-    initial.pomodoroClock.stage?.height > initial.pomodoroClock.stage?.width,
-    'Expanded Pomodoro clock should use a vertical glass stage',
+    initial.pomodoroClock.segmentCenters[0] < initial.pomodoroClock.ringCenter &&
+      initial.pomodoroClock.segmentCenters[1] > initial.pomodoroClock.ringCenter,
+    'Expanded Pomodoro clock segments should frame the timer ring from each side',
+  )
+  assert(initial.pomodoroClock.bodyFits, 'Desktop Pomodoro should fit without internal scrolling at its default size')
+  assert(
+    initial.pomodoroClock.stage?.width > initial.pomodoroClock.stage?.height,
+    'Expanded Pomodoro clock should use a wide glass stage for its lateral time segments',
   )
   assert(
     /Fin si demarre maintenant/.test(initial.pomodoroClock.tooltip),

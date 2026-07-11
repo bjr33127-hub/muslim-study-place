@@ -6039,7 +6039,7 @@ button.flame-quest {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  margin-bottom: 7px;
+  margin-bottom: 0;
 }
 
 .cycle-step {
@@ -6107,6 +6107,8 @@ button.flame-quest {
   --mode-accent: #ff9b4f;
   --mode-accent-soft: rgba(255, 140, 68, 0.16);
   --mode-glow: rgba(255, 126, 58, 0.28);
+  display: grid;
+  gap: 4px;
 }
 
 .pomodoro-widget.mode-shortBreak {
@@ -6334,33 +6336,36 @@ button.flame-quest {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(100%, 184px);
-  height: 202px;
-  margin: 0 auto 10px;
+  width: min(100%, 240px);
+  height: 156px;
+  margin: 0 auto;
   isolation: isolate;
 }
 
 .timer-orbital::after {
   position: absolute;
   z-index: 1;
-  inset: 29px 18px;
+  top: 50%;
+  left: 50%;
+  width: 112px;
+  height: 112px;
   content: "";
   border-radius: 999px;
   background:
     radial-gradient(circle at 38% 22%, rgba(255, 255, 255, 0.15), transparent 30%),
-    rgba(4, 6, 5, 0.78);
+    rgba(4, 6, 5, 0.66);
   box-shadow:
     inset 0 0 0 1px rgba(222, 211, 178, 0.1),
     0 18px 34px rgba(0, 0, 0, 0.22);
   pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 .pomodoro-ambient-clock {
   position: absolute;
   inset: 0;
   z-index: 0;
-  display: grid;
-  place-content: center;
+  display: block;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--mode-accent) 32%, rgba(255, 249, 233, 0.2));
   border-radius: 28px;
@@ -6375,10 +6380,10 @@ button.flame-quest {
     0 18px 42px rgba(0, 0, 0, 0.3),
     0 0 28px color-mix(in srgb, var(--mode-glow) 46%, transparent);
   backdrop-filter: blur(22px) saturate(1.18);
-  font-size: 76px;
+  font-size: 66px;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.075em;
+  letter-spacing: -0.08em;
   line-height: 1;
   outline: none;
   text-align: center;
@@ -6396,8 +6401,18 @@ button.flame-quest {
 }
 
 .pomodoro-ambient-clock > span:not(.pomodoro-clock-tooltip) {
+  position: absolute;
+  top: 50%;
   opacity: 0.3;
-  transform: scaleY(2.18);
+  transform: translateY(-50%) scaleY(1.72);
+}
+
+.pomodoro-clock-hours {
+  left: 10px;
+}
+
+.pomodoro-clock-minutes {
+  right: 10px;
 }
 
 .pomodoro-ambient-clock:focus-visible {
@@ -6410,8 +6425,8 @@ button.flame-quest {
   z-index: 2;
   top: 50%;
   left: 50%;
-  width: 142px;
-  height: 142px;
+  width: 122px;
+  height: 122px;
   overflow: visible;
   transform: translate(-50%, -50%) rotate(-90deg);
 }
@@ -6504,9 +6519,9 @@ button.flame-quest {
 
 .pomodoro-chain {
   display: grid;
-  gap: 6px;
-  margin-bottom: 7px;
-  padding: 7px 9px;
+  gap: 4px;
+  margin-bottom: 0;
+  padding: 5px 8px;
   border: 1px solid rgba(222, 211, 178, 0.13);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.045);
@@ -6630,8 +6645,8 @@ button.flame-quest {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 34px;
-  margin-bottom: 8px;
+  min-height: 30px;
+  margin-bottom: 0;
   padding: 0 9px;
   border: 1px solid rgba(222, 211, 178, 0.13);
   border-radius: var(--radius);
@@ -6642,7 +6657,7 @@ button.flame-quest {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(104px, 0.68fr);
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .pomodoro-quick-row .free-pomodoro-button,
@@ -6699,7 +6714,17 @@ button.flame-quest {
 .timer-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
+}
+
+.widget-frame-pomodoro .widget-body {
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.widget-frame-pomodoro .timer-actions button {
+  min-height: 30px;
+  padding: 0 8px;
 }
 
 .timer-actions.has-skip {

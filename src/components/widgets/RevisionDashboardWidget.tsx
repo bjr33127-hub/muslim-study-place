@@ -2,7 +2,6 @@ import {
   Archive,
   CalendarCheck,
   CheckCircle2,
-  Clock3,
   Dumbbell,
   Feather,
   Flame,
@@ -25,19 +24,14 @@ import type { ComponentType } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppCopy } from '../../lib/i18n'
 import {
-  completedEventsThisWeek,
-  completedEventsToday,
   courseById,
   dateKey,
   filterAndSortRevisionEvents,
   formatShortDate,
   groupCompletedRevisionEventsByCourse,
-  revisionCounts,
   revisionOffsetLabel,
   revisionEventStatusForDay,
-  revisionsDueToday,
   todayRevisionEvents,
-  weekStartKey,
 } from '../../lib/revisions'
 import {
   TODO_DIFFICULTIES,
@@ -49,6 +43,7 @@ import {
 import type {
   RevisionCourse,
   RevisionEvent,
+  RevisionSubject,
   TodoDifficulty,
   TodoPriority,
 } from '../../types/app'
@@ -90,6 +85,7 @@ type RevisionDashboardWidgetProps = {
   copy: AppCopy['revisions']
   todoCopy: AppCopy['todo']
   courses: RevisionCourse[]
+  subjects: RevisionSubject[]
   events: RevisionEvent[]
   activeRevisionEventId?: string
   isTimerRunning: boolean
@@ -134,6 +130,7 @@ export function RevisionDashboardWidget({
   copy,
   todoCopy,
   courses,
+  subjects,
   events,
   activeRevisionEventId,
   isTimerRunning,
@@ -146,6 +143,7 @@ export function RevisionDashboardWidget({
   const [filter, setFilter] = useState<TodoFilter>('active')
   const [query, setQuery] = useState('')
   const [sortMode, setSortMode] = useState<TodoSortMode>('manual')
+  const [subjectId, setSubjectId] = useState('')
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const today = dateKey()
   const coursesById = useMemo(() => courseById(courses), [courses])
@@ -153,19 +151,9 @@ export function RevisionDashboardWidget({
     () => todayRevisionEvents(events, today),
     [events, today],
   )
-  const due = useMemo(() => revisionsDueToday(todayEvents, today), [todayEvents, today])
   const visibleEvents = useMemo(
-    () => filterAndSortRevisionEvents(todayEvents, courses, filter, query, sortMode),
-    [courses, filter, query, sortMode, todayEvents],
-  )
-  const counts = useMemo(() => revisionCounts(todayEvents), [todayEvents])
-  const doneToday = useMemo(
-    () => completedEventsToday(todayEvents, today),
-    [todayEvents, today],
-  )
-  const doneWeek = useMemo(
-    () => completedEventsThisWeek(events, weekStartKey(today)),
-    [events, today],
+    () => filterAndSortRevisionEvents(todayEvents, courses, filter, query, sortMode, subjectId),
+    [courses, filter, query, sortMode, subjectId, todayEvents],
   )
   const activeVisibleEvents = useMemo(
     () =>
@@ -182,24 +170,6 @@ export function RevisionDashboardWidget({
 
   return (
     <div className="revision-dashboard">
-      <div className="revision-stats-grid">
-        <div className="revision-stat">
-          <Clock3 size={17} strokeWidth={1.8} />
-          <span>{copy.dueToday}</span>
-          <strong>{due.length}</strong>
-        </div>
-        <div className="revision-stat is-done">
-          <CheckCircle2 size={17} strokeWidth={1.8} />
-          <span>{copy.doneToday}</span>
-          <strong>{doneToday.length}</strong>
-        </div>
-        <div className="revision-stat is-week">
-          <CalendarCheck size={17} strokeWidth={1.8} />
-          <span>{copy.thisWeek}</span>
-          <strong>{doneWeek.length}</strong>
-        </div>
-      </div>
-
       <div className="revision-section-heading">
         <Flame size={16} strokeWidth={1.8} />
         <span>{copy.dashboardTitle}</span>
@@ -228,6 +198,20 @@ export function RevisionDashboardWidget({
             ))}
           </select>
         </label>
+        <label className="todo-sort-select revision-subject-filter">
+          <ListFilter size={14} strokeWidth={1.8} />
+          <select
+            aria-label={copy.subjectFilter}
+            value={subjectId}
+            onChange={(event) => setSubjectId(event.target.value)}
+          >
+            <option value="">{copy.allSubjects}</option>
+            <option value="none">{copy.noSubject}</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>{subject.name}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="todo-tabs revision-tabs" aria-label={todoCopy.filterAria}>
@@ -243,20 +227,13 @@ export function RevisionDashboardWidget({
         ))}
       </div>
 
-      <div className="todo-summary">
-        {todoCopy.counts(counts.active, counts.completed)}
-      </div>
-
       <div className="revision-today-list">
         {activeVisibleEvents.map((event) => {
           const course = coursesById.get(event.courseId)
           const status = revisionEventStatusForDay(event, today)
           const title = course?.title ?? copy.courseName
           const isActive = event.id === activeRevisionEventId
-          const progress = Math.min(
-            event.completedPomodoros / Math.max(event.requiredPomodoros, 1),
-            1,
-          )
+          const subject = subjects.find((item) => item.id === course?.subjectId)
           const actionLabel = isActive
             ? isTimerRunning
               ? copy.pause
@@ -272,13 +249,14 @@ export function RevisionDashboardWidget({
               data-revision-event-id={event.id}
               className={`revision-card status-${status}`}
               style={{
-                '--revision-color': course?.color,
-                '--revision-text-color': course?.textColor,
+                '--revision-color': subject?.color ?? course?.color,
+                '--revision-text-color': subject?.textColor ?? course?.textColor,
               } as CSSProperties}
             >
               <div className="revision-card-main">
                 <span className="revision-kind">{eventLabel(copy, course, event)}</span>
                 <div className="revision-title-line">
+                  <i className="revision-course-dot" style={{ background: course?.color }} aria-hidden="true" />
                   <strong>{title}</strong>
                   <AttributePill
                     className={`priority-pill priority-${event.priority}`}
@@ -365,12 +343,9 @@ export function RevisionDashboardWidget({
                 </div>
               </div>
 
-              <div className="revision-progress-line" aria-label={copy.progress}>
-                <span style={{ width: `${Math.round(progress * 100)}%` }} />
-                <strong>
-                  {event.completedPomodoros}/{event.requiredPomodoros}
-                </strong>
-              </div>
+              <strong className="revision-progress-ratio" aria-label={copy.progress}>
+                {event.completedPomodoros}/{event.requiredPomodoros}
+              </strong>
 
               <div className="revision-card-actions">
                 <button

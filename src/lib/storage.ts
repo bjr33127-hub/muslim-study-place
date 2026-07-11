@@ -28,6 +28,7 @@ export const DURABLE_STORAGE_KEYS = [
   'streak',
   'flameEvolution',
   'revisionMethods',
+  'revisionSubjects',
   'revisionCourses',
   'revisionEvents',
   'revisionSettings',

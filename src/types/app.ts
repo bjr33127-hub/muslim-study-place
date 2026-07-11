@@ -87,6 +87,15 @@ export type RevisionMethod = {
   updatedAt: number
 }
 
+export type RevisionSubject = {
+  id: string
+  name: string
+  color: string
+  textColor: string
+  createdAt: number
+  updatedAt: number
+}
+
 export type RevisionCourse = {
   id: string
   title: string
@@ -96,6 +105,7 @@ export type RevisionCourse = {
   notes: string
   color: string
   textColor: string
+  subjectId: string | null
   methodId: string | null
   excludedWeekdays: RevisionWeekday[]
   createdAt: number

@@ -43,6 +43,7 @@ import {
   revisionEventStart,
   revisionEventStatusForDay,
   revisionsDueToday,
+  subjectById,
   todayRevisionEvents,
   timeKey,
   weekStartKey,
@@ -57,6 +58,7 @@ import type {
   RevisionEvent,
   RevisionMethod,
   RevisionSettings,
+  RevisionSubject,
   RevisionWeekday,
   GoogleCalendarSyncState,
   TodoDifficulty,
@@ -71,6 +73,7 @@ type RevisionPlannerPageProps = {
   todoCopy: AppCopy['todo']
   language: string
   courses: RevisionCourse[]
+  subjects: RevisionSubject[]
   events: RevisionEvent[]
   methods: RevisionMethod[]
   settings: RevisionSettings
@@ -81,6 +84,8 @@ type RevisionPlannerPageProps = {
   onClose: () => void
   onSettingsChange: (settings: Partial<RevisionSettings>) => void
   onSaveCourse: (course: RevisionCourse) => void
+  onSaveSubject: (subject: RevisionSubject) => void
+  onDeleteSubject: (id: string) => void
   onDeleteCourse: (id: string) => void
   onDeleteEvent: (id: string) => void
   onStartEvent: (id: string) => void
@@ -113,6 +118,9 @@ type CourseDraft = {
   part: string
   notes: string
   colorPresetId: string
+  subjectId: string
+  subjectName: string
+  subjectColorPresetId: string
   methodId: string
   excludedWeekdays: RevisionWeekday[]
   createdAt: number
@@ -142,6 +150,9 @@ function courseToDraft(course: RevisionCourse): CourseDraft {
     part: course.part,
     notes: course.notes,
     colorPresetId: preset.id,
+    subjectId: course.subjectId ?? '',
+    subjectName: '',
+    subjectColorPresetId: REVISION_COLOR_PRESETS[0].id,
     methodId: course.methodId ?? '',
     excludedWeekdays: course.excludedWeekdays,
     createdAt: course.createdAt,
@@ -157,6 +168,9 @@ function newDraft(initialDate = dateKey()): CourseDraft {
     part: '',
     notes: '',
     colorPresetId: REVISION_COLOR_PRESETS[0].id,
+    subjectId: '',
+    subjectName: '',
+    subjectColorPresetId: REVISION_COLOR_PRESETS[0].id,
     methodId: DEFAULT_METHOD_ID,
     excludedWeekdays: [],
     createdAt: new Date().getTime(),
@@ -190,6 +204,7 @@ export function RevisionPlannerPage({
   todoCopy,
   language,
   courses,
+  subjects,
   events,
   methods,
   settings,
@@ -200,6 +215,8 @@ export function RevisionPlannerPage({
   onClose,
   onSettingsChange,
   onSaveCourse,
+  onSaveSubject,
+  onDeleteSubject,
   onDeleteCourse,
   onDeleteEvent,
   onStartEvent,
@@ -219,7 +236,10 @@ export function RevisionPlannerPage({
   const [draftStep, setDraftStep] = useState<CourseDraftStep>(0)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [courseSubjectFilter, setCourseSubjectFilter] = useState('')
+  const [todaySubjectFilter, setTodaySubjectFilter] = useState('')
   const coursesById = useMemo(() => courseById(courses), [courses])
+  const subjectsById = useMemo(() => subjectById(subjects), [subjects])
   const methodsById = useMemo(() => methodById(methods), [methods])
   const selectedEvent = selectedEventId
     ? events.find((event) => event.id === selectedEventId) ?? null
@@ -246,6 +266,16 @@ export function RevisionPlannerPage({
     () => completedEventsThisWeek(events, weekStartKey(today)),
     [events, today],
   )
+  const visibleDueToday = useMemo(
+    () =>
+      dueToday.filter((event) => {
+        const subjectId = coursesById.get(event.courseId)?.subjectId ?? ''
+        return todaySubjectFilter === 'none'
+          ? !subjectId
+          : !todaySubjectFilter || subjectId === todaySubjectFilter
+      }),
+    [coursesById, dueToday, todaySubjectFilter],
+  )
   const courseEventsById = useMemo(() => {
     const next = new Map<string, RevisionEvent[]>()
 
@@ -256,14 +286,22 @@ export function RevisionPlannerPage({
     return next
   }, [events])
   const sortedCourses = useMemo(
-    () => [...courses].sort((first, second) => second.updatedAt - first.updatedAt),
-    [courses],
+    () =>
+      [...courses]
+        .filter((course) =>
+          courseSubjectFilter === 'none'
+            ? !course.subjectId
+            : !courseSubjectFilter || course.subjectId === courseSubjectFilter,
+        )
+        .sort((first, second) => second.updatedAt - first.updatedAt),
+    [courseSubjectFilter, courses],
   )
 
   const calendarEvents = useMemo(
     () =>
       events.map((event) => {
         const course = coursesById.get(event.courseId)
+        const subject = course?.subjectId ? subjectsById.get(course.subjectId) : undefined
         const progress = `${event.completedPomodoros}/${event.requiredPomodoros}`
 
         return {
@@ -271,9 +309,9 @@ export function RevisionPlannerPage({
           title: course?.title ?? copy.courseName,
           start: revisionEventStart(event),
           allDay: !event.scheduledTime,
-          backgroundColor: course?.color ?? REVISION_COLOR_PRESETS[0].color,
-          borderColor: course?.color ?? REVISION_COLOR_PRESETS[0].color,
-          textColor: course?.textColor ?? REVISION_COLOR_PRESETS[0].textColor,
+          backgroundColor: subject?.color ?? course?.color ?? REVISION_COLOR_PRESETS[0].color,
+          borderColor: subject?.color ?? course?.color ?? REVISION_COLOR_PRESETS[0].color,
+          textColor: subject?.textColor ?? course?.textColor ?? REVISION_COLOR_PRESETS[0].textColor,
           extendedProps: {
             event,
             course,
@@ -282,13 +320,16 @@ export function RevisionPlannerPage({
           },
         }
       }),
-    [copy.courseName, coursesById, events],
+    [copy.courseName, coursesById, events, subjectsById],
   )
 
   const selectedPreset =
     REVISION_COLOR_PRESETS.find((item) => item.id === draft?.colorPresetId) ??
     REVISION_COLOR_PRESETS[0]
   const selectedMethod = draft?.methodId ? methodsById.get(draft.methodId) : null
+  const selectedSubjectPreset =
+    REVISION_COLOR_PRESETS.find((item) => item.id === draft?.subjectColorPresetId) ??
+    REVISION_COLOR_PRESETS[0]
   const previewCourse: RevisionCourse | null = draft
     ? {
         id: draft.id || 'preview-course',
@@ -299,6 +340,7 @@ export function RevisionPlannerPage({
         notes: draft.notes.trim(),
         color: selectedPreset.color,
         textColor: selectedPreset.textColor,
+        subjectId: draft.subjectId === 'new' ? null : draft.subjectId || null,
         methodId: draft.methodId || null,
         excludedWeekdays: draft.excludedWeekdays,
         createdAt: draft.createdAt,
@@ -419,6 +461,11 @@ export function RevisionPlannerPage({
       return
     }
 
+    if (draft.subjectId === 'new' && !draft.subjectName.trim()) {
+      setError(copy.requiredSubjectName)
+      return
+    }
+
     if (draftStep < 2) {
       setError('')
       setDraftStep((current) => Math.min(current + 1, 2) as CourseDraftStep)
@@ -426,6 +473,21 @@ export function RevisionPlannerPage({
     }
 
     const now = new Date().getTime()
+    const createdSubjectId =
+      draft.subjectId === 'new' && draft.subjectName.trim()
+        ? `revision-subject-${now}`
+        : null
+
+    if (createdSubjectId) {
+      onSaveSubject({
+        id: createdSubjectId,
+        name: draft.subjectName.trim(),
+        color: selectedSubjectPreset.color,
+        textColor: selectedSubjectPreset.textColor,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
 
     onSaveCourse({
       id: draft.id || `revision-course-${now}`,
@@ -436,6 +498,7 @@ export function RevisionPlannerPage({
       notes: draft.notes.trim(),
       color: selectedPreset.color,
       textColor: selectedPreset.textColor,
+      subjectId: createdSubjectId ?? (draft.subjectId || null),
       methodId: draft.methodId || null,
       excludedWeekdays: draft.excludedWeekdays,
       createdAt: draft.createdAt || now,
@@ -466,7 +529,7 @@ export function RevisionPlannerPage({
 
     return (
       <div className={`revision-fc-event status-${status}`}>
-        <strong>{info.event.title}</strong>
+        <strong><i className="revision-course-dot" style={{ background: course?.color }} aria-hidden="true" />{info.event.title}</strong>
         {course?.part ? <small>{course.part}</small> : null}
         <span>
           {eventLabel(copy, course, event)} - {progress}
@@ -571,10 +634,24 @@ export function RevisionPlannerPage({
                 {copy.addCourse}
               </button>
             </div>
+            <label className="todo-sort-select revision-subject-filter">
+              <select
+                aria-label={copy.subjectFilter}
+                value={todaySubjectFilter}
+                onChange={(event) => setTodaySubjectFilter(event.target.value)}
+              >
+                <option value="">{copy.allSubjects}</option>
+                <option value="none">{copy.noSubject}</option>
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>{subject.name}</option>
+                ))}
+              </select>
+            </label>
 
             <div className="revision-planner-today-list">
-              {dueToday.map((event) => {
+              {visibleDueToday.map((event) => {
                 const course = coursesById.get(event.courseId)
+                const subject = course?.subjectId ? subjectsById.get(course.subjectId) : undefined
                 const status = revisionEventStatusForDay(event, today)
                 const progress = Math.min(
                   event.completedPomodoros / Math.max(event.requiredPomodoros, 1),
@@ -586,8 +663,8 @@ export function RevisionPlannerPage({
                     className={`revision-card status-${status}`}
                     key={event.id}
                     style={{
-                      '--revision-color': course?.color,
-                      '--revision-text-color': course?.textColor,
+                      '--revision-color': subject?.color ?? course?.color,
+                      '--revision-text-color': subject?.textColor ?? course?.textColor,
                     } as CSSProperties}
                   >
                     <div className="revision-card-main">
@@ -595,6 +672,7 @@ export function RevisionPlannerPage({
                         {eventLabel(copy, course, event)}
                       </span>
                       <div className="revision-title-line">
+                        <i className="revision-course-dot" style={{ background: course?.color }} aria-hidden="true" />
                         <strong>{course?.title ?? copy.courseName}</strong>
                       </div>
                       {course?.part ? (
@@ -650,7 +728,7 @@ export function RevisionPlannerPage({
                 )
               })}
 
-              {!dueToday.length ? (
+              {!visibleDueToday.length ? (
                 <div className="revision-empty is-actionable">
                   <Sparkles size={20} strokeWidth={1.8} />
                   <strong>
@@ -700,6 +778,73 @@ export function RevisionPlannerPage({
               </button>
             </div>
 
+            <div className="revision-subject-management" aria-label={copy.subjects}>
+              <div className="revision-subject-management-head">
+                <strong>{copy.subjects}</strong>
+                <label className="todo-sort-select revision-subject-filter">
+                  <select
+                    aria-label={copy.subjectFilter}
+                    value={courseSubjectFilter}
+                    onChange={(event) => setCourseSubjectFilter(event.target.value)}
+                  >
+                    <option value="">{copy.allSubjects}</option>
+                    <option value="none">{copy.noSubject}</option>
+                    {subjects.map((subject) => (
+                      <option key={subject.id} value={subject.id}>{subject.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {subjects.length ? (
+                <div className="revision-subject-list">
+                  {subjects.map((subject) => (
+                    <div key={subject.id} className="revision-subject-row" style={{ '--subject-color': subject.color } as CSSProperties}>
+                      <i aria-hidden="true" />
+                      <input
+                        aria-label={copy.editSubject(subject.name)}
+                        defaultValue={subject.name}
+                        onBlur={(event) => {
+                          const name = event.target.value.trim()
+                          if (name && name !== subject.name) {
+                            onSaveSubject({ ...subject, name, updatedAt: Date.now() })
+                          }
+                        }}
+                      />
+                      <select
+                        aria-label={copy.subjectColor}
+                        value={
+                          REVISION_COLOR_PRESETS.find((preset) => preset.color === subject.color)?.id ??
+                          REVISION_COLOR_PRESETS[0].id
+                        }
+                        onChange={(event) => {
+                          const preset = REVISION_COLOR_PRESETS.find((item) => item.id === event.target.value)
+                          if (preset) {
+                            onSaveSubject({ ...subject, color: preset.color, textColor: preset.textColor, updatedAt: Date.now() })
+                          }
+                        }}
+                      >
+                        {REVISION_COLOR_PRESETS.map((preset) => (
+                          <option key={preset.id} value={preset.id}>{preset.label}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="icon-button close-button"
+                        type="button"
+                        aria-label={copy.deleteSubject(subject.name)}
+                        onClick={() => {
+                          if (globalThis.confirm(copy.deleteSubjectConfirm(subject.name))) {
+                            onDeleteSubject(subject.id)
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} strokeWidth={1.9} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : <small className="revision-subject-empty">{copy.subjectsEmpty}</small>}
+            </div>
+
             {sortedCourses.length ? (
               <div className="revision-course-list">
                 {sortedCourses.map((course) => {
@@ -709,12 +854,16 @@ export function RevisionPlannerPage({
                     <article
                       className="revision-course-management-card"
                       key={course.id}
-                      style={{ '--revision-color': course.color } as CSSProperties}
+                      style={{
+                        '--revision-color': subjectsById.get(course.subjectId ?? '')?.color ?? course.color,
+                        '--course-color': course.color,
+                      } as CSSProperties}
                     >
                       <span className="revision-course-management-accent" aria-hidden="true" />
                       <div className="revision-course-management-copy">
-                        <strong>{course.title}</strong>
+                        <strong><i className="revision-course-dot" aria-hidden="true" />{course.title}</strong>
                         <small>
+                          {subjectsById.get(course.subjectId ?? '')?.name ?? copy.noSubject} -{' '}
                           {formatShortDate(course.initialDate, language)}
                           {course.part ? ` - ${course.part}` : ''}
                           {course.professor ? ` - ${course.professor}` : ''}
@@ -1158,6 +1307,51 @@ export function RevisionPlannerPage({
                         }
                       />
                     </label>
+                    <label>
+                      <span>{copy.subject}</span>
+                      <select
+                        value={draft.subjectId}
+                        onChange={(event) =>
+                          setDraft({ ...draft, subjectId: event.target.value })
+                        }
+                      >
+                        <option value="">{copy.noSubject}</option>
+                        {subjects.map((subject) => (
+                          <option key={subject.id} value={subject.id}>
+                            {subject.name}
+                          </option>
+                        ))}
+                        <option value="new">{copy.newSubject}</option>
+                      </select>
+                    </label>
+                    {draft.subjectId === 'new' ? (
+                      <>
+                        <label>
+                          <span>{copy.subjectName}</span>
+                          <input
+                            value={draft.subjectName}
+                            onChange={(event) =>
+                              setDraft({ ...draft, subjectName: event.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>{copy.subjectColor}</span>
+                          <select
+                            value={draft.subjectColorPresetId}
+                            onChange={(event) =>
+                              setDraft({ ...draft, subjectColorPresetId: event.target.value })
+                            }
+                          >
+                            {REVISION_COLOR_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
                     <label>
                       <span>{copy.method}</span>
                       <select

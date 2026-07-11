@@ -3,6 +3,7 @@ import type {
   RevisionEvent,
   RevisionEventStatus,
   RevisionMethod,
+  RevisionSubject,
   RevisionSettings,
   RevisionWeekday,
   GoogleCalendarSyncState,
@@ -330,6 +331,10 @@ export function normalizeRevisionCourses(value: unknown): RevisionCourse[] {
         notes: cleanText(candidate.notes),
         color: normalizeColor(candidate.color, preset.color),
         textColor: normalizeColor(candidate.textColor, preset.textColor),
+        subjectId:
+          typeof candidate.subjectId === 'string' && candidate.subjectId
+            ? candidate.subjectId
+            : null,
         methodId:
           typeof candidate.methodId === 'string' && candidate.methodId
             ? candidate.methodId
@@ -340,6 +345,40 @@ export function normalizeRevisionCourses(value: unknown): RevisionCourse[] {
       },
     ]
   })
+}
+
+export function normalizeRevisionSubjects(value: unknown): RevisionSubject[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((item, index) => {
+    const candidate = item as Partial<RevisionSubject>
+    const name = cleanText(candidate.name)
+
+    if (!name) {
+      return []
+    }
+
+    const createdAt = cleanNumber(candidate.createdAt, Date.now())
+    const preset = REVISION_COLOR_PRESETS[index % REVISION_COLOR_PRESETS.length]
+
+    return [{
+      id:
+        typeof candidate.id === 'string' && candidate.id
+          ? candidate.id
+          : `revision-subject-${Date.now()}-${index}`,
+      name,
+      color: normalizeColor(candidate.color, preset.color),
+      textColor: normalizeColor(candidate.textColor, preset.textColor),
+      createdAt,
+      updatedAt: cleanNumber(candidate.updatedAt, createdAt),
+    }]
+  })
+}
+
+export function subjectById(subjects: RevisionSubject[]) {
+  return new Map(subjects.map((subject) => [subject.id, subject]))
 }
 
 export function normalizeRevisionEvents(value: unknown): RevisionEvent[] {
@@ -739,12 +778,23 @@ export function filterAndSortRevisionEvents(
   filter: TodoFilter,
   query = '',
   sortMode: TodoSortMode = 'manual',
+  subjectId = '',
 ) {
   const coursesById = courseById(courses)
 
   return [...events]
     .filter((event) => {
       if (!matchesRevisionQuery(event, coursesById, query)) {
+        return false
+      }
+
+      const eventSubjectId = coursesById.get(event.courseId)?.subjectId ?? ''
+
+      if (subjectId === 'none' && eventSubjectId) {
+        return false
+      }
+
+      if (subjectId && subjectId !== 'none' && eventSubjectId !== subjectId) {
         return false
       }
 

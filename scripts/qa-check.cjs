@@ -2073,6 +2073,8 @@ async function main() {
     revisionFrames: document.querySelectorAll(
       '.widget-frame-revisionDashboard, .widget-frame-revisionCalendar, .widget-frame-revisionMethods',
     ).length,
+    revisionDashboardStats: document.querySelectorAll('.revision-dashboard .revision-stats-grid').length,
+    revisionSubjectFilters: document.querySelectorAll('.revision-dashboard [aria-label="Filtrer par matiere"]').length,
     oldRevisionFrames: document.querySelectorAll(
       '.widget-frame-revisionCalendar, .widget-frame-revisionMethods',
     ).length,
@@ -2145,6 +2147,8 @@ async function main() {
   assert(initial.lang === 'fr', 'French should be the default interface language')
   assert(initial.visibleWidgets === 5, 'Expected five widgets on the dashboard')
   assert(initial.revisionFrames === 1, 'Only the revision dashboard widget should render')
+  assert(initial.revisionDashboardStats === 0, 'Revision dashboard should not render the decorative stats cards')
+  assert(initial.revisionSubjectFilters === 1, 'Revision dashboard should expose a subject filter')
   assert(initial.oldRevisionFrames === 0, 'Old revision calendar and methods widgets should not render')
   assert(initial.revisionPlannerButtons === 1, 'Revision planner should have one dock button')
   assert(initial.guideButtons === 1, 'Guide should have one dock button')

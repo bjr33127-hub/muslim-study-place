@@ -114,6 +114,7 @@ import {
   normalizeRevisionCourses,
   normalizeRevisionEvents,
   normalizeRevisionMethods,
+  normalizeRevisionSubjects,
   normalizeRevisionSettings,
   revisionsDueToday,
   revisionOffsetLabel,
@@ -143,6 +144,7 @@ import type {
   RevisionCourse,
   RevisionEvent,
   RevisionMethod,
+  RevisionSubject,
   RevisionSettings,
   StreakUnlockCue,
   TaskWindow,
@@ -276,7 +278,6 @@ function useCurrentMinute() {
 
 type MiniPomodoroButtonProps = {
   mode: TimerMode
-  modeLabel: string
   remaining: number
   progress: number
   isRunning: boolean
@@ -292,7 +293,6 @@ type MiniPomodoroButtonProps = {
 
 function MiniPomodoroButton({
   mode,
-  modeLabel,
   remaining,
   progress,
   isRunning,
@@ -335,10 +335,6 @@ function MiniPomodoroButton({
           <strong>{formatCompactTime(remaining)}</strong>
           <small>
             <i className={isRunning ? 'is-live' : ''} />
-            <span className="mini-pomodoro-mode-label">{modeLabel}</span>
-            <span className="mini-pomodoro-clock-separator" aria-hidden="true">
-              ·
-            </span>
             <time dateTime={clockDateTime}>{clockText}</time>
           </small>
         </span>
@@ -502,6 +498,14 @@ function App() {
   const revisionMethods = useMemo(
     () => normalizeRevisionMethods(revisionMethodsState),
     [revisionMethodsState],
+  )
+  const [revisionSubjectsState, setRevisionSubjects] = usePersistentState<RevisionSubject[]>(
+    'revisionSubjects',
+    [],
+  )
+  const revisionSubjects = useMemo(
+    () => normalizeRevisionSubjects(revisionSubjectsState),
+    [revisionSubjectsState],
   )
   const [revisionCoursesState, setRevisionCourses] = usePersistentState<
     RevisionCourse[]
@@ -2493,6 +2497,31 @@ function App() {
     }))
   }
 
+  const saveRevisionSubject = useCallback(
+    (subject: RevisionSubject) => {
+      setRevisionSubjects((current) =>
+        normalizeRevisionSubjects([...current.filter((item) => item.id !== subject.id), subject]),
+      )
+    },
+    [setRevisionSubjects],
+  )
+
+  const deleteRevisionSubject = useCallback(
+    (subjectId: string) => {
+      setRevisionSubjects((current) =>
+        normalizeRevisionSubjects(current).filter((subject) => subject.id !== subjectId),
+      )
+      setRevisionCourses((current) =>
+        normalizeRevisionCourses(current).map((course) =>
+          course.subjectId === subjectId
+            ? { ...course, subjectId: null, updatedAt: Date.now() }
+            : course,
+        ),
+      )
+    },
+    [setRevisionCourses, setRevisionSubjects],
+  )
+
   const selectBackground = useCallback((id: string) => {
     setSelectedBackgroundId(id)
     window.dispatchEvent(new CustomEvent('msp:guide-action', {
@@ -3162,6 +3191,7 @@ function App() {
             copy={copy.revisions}
             todoCopy={copy.todo}
             courses={revisionCourses}
+            subjects={revisionSubjects}
             events={revisionEvents}
             activeRevisionEventId={activeRevisionEvent?.id}
             isTimerRunning={timerRunning}
@@ -3339,7 +3369,6 @@ function App() {
           showMiniPomodoro ? (
             <MiniPomodoroButton
               mode={timerMode}
-              modeLabel={copy.pomodoro.modes[timerMode]}
               remaining={timerRemaining}
               progress={miniPomodoroProgress}
               isRunning={timerRunning}
@@ -3424,6 +3453,7 @@ function App() {
             todoCopy={copy.todo}
             language={language}
             courses={revisionCourses}
+            subjects={revisionSubjects}
             events={revisionEvents}
             methods={revisionMethods}
             settings={revisionSettings}
@@ -3434,6 +3464,8 @@ function App() {
             onClose={closeRevisionPlanner}
             onSettingsChange={changeRevisionSettings}
             onSaveCourse={saveRevisionCourse}
+            onSaveSubject={saveRevisionSubject}
+            onDeleteSubject={deleteRevisionSubject}
             onDeleteCourse={deleteRevisionCourse}
             onDeleteEvent={deleteRevisionEvent}
             onStartEvent={startRevisionEvent}

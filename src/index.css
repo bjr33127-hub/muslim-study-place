@@ -7748,10 +7748,10 @@ button.flame-quest {
 
 .revision-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 8px;
-  row-gap: 5px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
   padding: 8px;
+  container-type: inline-size;
 }
 
 .revision-card.status-active {
@@ -7793,13 +7793,32 @@ button.flame-quest {
 
 .revision-title-line {
   display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+}
+
+.revision-title-line strong {
+  flex: 1 1 auto;
+}
+
+.revision-card-meta {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   min-width: 0;
 }
 
+.revision-card-meta small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .revision-kind {
+  flex: 0 0 auto;
   justify-self: start;
   padding: 2px 7px;
   border-radius: 999px;
@@ -7807,6 +7826,8 @@ button.flame-quest {
   background: var(--revision-color);
   font-size: 10px;
   font-weight: 830;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .revision-card-main strong,
@@ -7835,40 +7856,147 @@ button.flame-quest {
   gap: 6px;
 }
 
-.revision-task-meta {
+.revision-toolbar {
+  grid-template-columns: minmax(108px, 0.42fr) minmax(0, 1fr);
+  margin-bottom: 0;
+}
+
+.revision-filter-control,
+.revision-attribute-control {
+  position: relative;
+}
+
+.revision-filter-trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(222, 211, 178, 0.17);
+  border-radius: 8px;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.revision-filter-trigger:hover,
+.revision-filter-trigger.is-open {
+  border-color: color-mix(in srgb, var(--gold) 56%, transparent);
+  color: var(--text);
+  background: rgba(217, 182, 108, 0.1);
+}
+
+.revision-filter-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revision-filter-menu,
+.revision-attribute-menu {
+  position: absolute;
+  z-index: 25;
+  border: 1px solid rgba(222, 211, 178, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 19, 16, 0.97);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+.revision-filter-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(276px, calc(100vw - 28px));
+  padding: 8px;
+}
+
+.revision-filter-search {
+  min-height: 31px;
+  margin-bottom: 8px;
+}
+
+.revision-filter-menu-section + .revision-filter-menu-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(222, 211, 178, 0.11);
+}
+
+.revision-filter-menu-section > span {
+  display: block;
+  margin: 0 3px 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 790;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.revision-filter-menu-section > div {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px;
+}
+
+.revision-filter-menu button,
+.revision-attribute-menu button {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-
-.revision-progress-ratio {
-  align-self: center;
-  justify-self: end;
-  padding: 3px 6px;
-  border: 1px solid color-mix(in srgb, var(--revision-color) 40%, transparent);
-  border-radius: 999px;
-  color: var(--text);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.revision-toolbar {
-  margin-bottom: 0;
-}
-
-.revision-tabs {
-  margin-bottom: 0;
-}
-
-.revision-inline-select {
-  min-height: 28px;
-}
-
-.revision-inline-select select {
-  min-height: 28px;
-  padding-right: 24px;
+  gap: 5px;
+  min-height: 25px;
+  border: 1px solid rgba(222, 211, 178, 0.13);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
   font-size: 10px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.revision-filter-menu button {
+  padding: 3px 7px;
+}
+
+.revision-filter-menu button i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 7px currentColor;
+}
+
+.revision-filter-menu button:hover,
+.revision-filter-menu button.is-selected,
+.revision-attribute-menu button:hover,
+.revision-attribute-menu button.is-selected {
+  border-color: color-mix(in srgb, var(--gold) 52%, transparent);
+  color: var(--text);
+  background: rgba(217, 182, 108, 0.16);
+}
+
+.revision-attribute-trigger {
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.revision-attribute-trigger:hover,
+.revision-attribute-trigger:focus-visible {
+  border-color: rgba(248, 239, 210, 0.7);
+  transform: translateY(-1px);
+}
+
+.revision-attribute-menu {
+  top: calc(100% + 5px);
+  left: 0;
+  display: grid;
+  min-width: 118px;
+  padding: 5px;
+}
+
+.revision-attribute-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 5px 7px;
+  text-align: left;
 }
 
 .revision-progress-line {
@@ -7883,17 +8011,38 @@ button.flame-quest {
   background: rgba(0, 0, 0, 0.24);
 }
 
-.revision-dashboard .revision-task-meta,
-.revision-dashboard .revision-card-actions {
-  grid-column: 1 / -1;
+.revision-card-tools {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
 }
 
-.revision-dashboard .revision-card-actions {
-  justify-content: flex-end;
+.revision-card-tools .revision-card-actions {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  justify-content: stretch;
+  gap: 6px;
 }
 
-.revision-subject-filter {
-  min-width: 132px;
+.revision-card-tools .revision-card-actions button {
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.revision-card-tools .goal-stepper.small {
+  flex: 0 0 auto;
+}
+
+@container (max-width: 390px) {
+  .revision-card-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .revision-card-tools .goal-stepper.small {
+    justify-self: start;
+  }
 }
 
 .revision-subject-management {

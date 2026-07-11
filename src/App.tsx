@@ -3448,7 +3448,15 @@ function App() {
       {revisionPlannerVisible ? (
         <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
           <RevisionPlannerPage
-            key={guideTourStep === 'course-delete' ? 'guide-course-delete' : 'planner'}
+            key={
+              guideTourStep === 'course-delete'
+                ? 'guide-course-delete'
+                : ['course-name', 'course-basics', 'course-details', 'course-create'].includes(
+                    guideTourStep,
+                  )
+                  ? 'guide-course-wizard'
+                  : 'planner'
+            }
             copy={copy.revisions}
             todoCopy={copy.todo}
             language={language}

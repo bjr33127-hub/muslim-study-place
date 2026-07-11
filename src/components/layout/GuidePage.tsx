@@ -115,7 +115,7 @@ const GUIDE_COPY: Record<AppLanguage, GuideCopy> = {
         body:
           'Un cours cree automatiquement ses rappels selon la methode de revision choisie. Commence par ouvrir le formulaire.',
         task: 'Clique sur Ajouter un cours.',
-        selector: '[data-guide="revision-course-open"]',
+        selector: '[data-guide="revision-planner"] [data-guide-target="revision-course-open"]',
         event: 'click',
       },
       {
@@ -304,7 +304,7 @@ const GUIDE_COPY: Record<AppLanguage, GuideCopy> = {
         body:
           'A course automatically creates reminders from your chosen review method. Start by opening the form.',
         task: 'Click Add course.',
-        selector: '[data-guide="revision-course-open"]',
+        selector: '[data-guide="revision-planner"] [data-guide-target="revision-course-open"]',
         event: 'click',
       },
       {
@@ -480,7 +480,7 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
     return step.selector
   }, [createdCourseId, step.id, step.selector])
 
-  const measureTarget = useCallback(() => {
+  const measureTarget = useCallback((scrollIntoView = false) => {
     const target = findTarget(targetSelector)
 
     if (!target) {
@@ -488,7 +488,9 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
       return
     }
 
-    target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+    if (scrollIntoView) {
+      target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+    }
     const rect = target.getBoundingClientRect()
     setTargetRect({
       top: rect.top,
@@ -501,10 +503,10 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
   useEffect(() => {
     onPrepareStep?.(step.id)
     const firstFrame = window.requestAnimationFrame(() => {
-      const secondFrame = window.requestAnimationFrame(measureTarget)
+      const secondFrame = window.requestAnimationFrame(() => measureTarget(true))
       return () => window.cancelAnimationFrame(secondFrame)
     })
-    const retry = window.setTimeout(measureTarget, 320)
+    const retry = window.setTimeout(() => measureTarget(true), 320)
 
     return () => {
       window.cancelAnimationFrame(firstFrame)
@@ -513,7 +515,7 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
   }, [measureTarget, onPrepareStep, step.id])
 
   useEffect(() => {
-    const update = () => measureTarget()
+    const update = () => measureTarget(false)
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
 

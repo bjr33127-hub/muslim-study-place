@@ -1,4 +1,4 @@
-import { Award, Sparkles, Star, X, Zap } from 'lucide-react'
+import { Activity, Sparkles, Star, X, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AppCopy } from '../../lib/i18n'
 import { getPomodoroWeekSummary } from '../../lib/pomodoroRun'
@@ -6,7 +6,7 @@ import type { PomodoroRunState } from '../../types/app'
 
 type MetricCopy = AppCopy['topbar']
 
-type BestRunBadgeProps = {
+type WeeklyMomentumBadgeProps = {
   run: PomodoroRunState
   copy: MetricCopy
   burstKey: number
@@ -79,18 +79,17 @@ function MetricWeekRow({
   )
 }
 
-export function BestRunBadge({
+export function WeeklyMomentumBadge({
   run,
   copy,
   burstKey,
   isOpen,
   onToggleOpen,
   onClose,
-}: BestRunBadgeProps) {
+}: WeeklyMomentumBadgeProps) {
   const isBursting = useTimedPulse(burstKey, 1300)
   const week = useMemo(() => getPomodoroWeekSummary(run), [run])
-  const isLit = run.bestRun > 0
-  const segments = Array.from({ length: 6 }, (_, index) => index < Math.min(run.currentRun, 6))
+  const isLit = week.weekStars > 0
 
   return (
     <div className={`metric-shell best-run-shell${isOpen ? ' is-open' : ''}`}>
@@ -101,74 +100,74 @@ export function BestRunBadge({
           isBursting ? 'is-bursting' : '',
         ].filter(Boolean).join(' ')}
         type="button"
-        aria-label={copy.bestRunOpen}
+        aria-label={copy.weeklyMomentumOpen}
         aria-expanded={isOpen}
         onClick={onToggleOpen}
       >
         <span className="best-star-orb" aria-hidden="true">
           <span className="combo-ring" />
-          <Award size={18} strokeWidth={2} />
+          <Activity size={18} strokeWidth={2} />
         </span>
         <span className="best-run-copy">
-          <strong>{run.bestRun}</strong>
-          <span>{copy.bestRun}</span>
+          <strong>{week.weekStars}</strong>
+          <span>{copy.weeklyMomentum}</span>
         </span>
         <span className="combo-mini" aria-hidden="true">
-          {segments.map((filled, index) => (
-            <i key={index} className={filled ? 'is-filled' : ''} />
+          {week.days.map((day) => (
+            <i key={day.date} className={day.stars > 0 ? 'is-filled' : ''} />
           ))}
         </span>
       </button>
 
       {isOpen ? (
-        <div className="pomodoro-metric-popover best-run-popover" role="dialog" aria-label={copy.bestRunPanelTitle}>
+        <div className="pomodoro-metric-popover best-run-popover" role="dialog" aria-label={copy.weeklyMomentumPanelTitle}>
           <div className="metric-popover-head">
             <span className="metric-hero-orb combo-hero" aria-hidden="true">
               <span className="combo-ring" />
-              <Award size={42} strokeWidth={1.9} />
+              <Activity size={42} strokeWidth={1.9} />
               <Zap size={22} strokeWidth={2.1} />
             </span>
             <button
               className="quiet-icon metric-close"
               type="button"
-              aria-label={copy.closeBestRunPanel}
+              aria-label={copy.closeWeeklyMomentumPanel}
               onClick={onClose}
             >
               <X size={16} strokeWidth={2} />
             </button>
           </div>
           <div className="metric-hero-copy">
-            <strong>{run.bestRun}</strong>
-            <span>{copy.bestRunPanelTitle}</span>
+            <strong>{week.weekStars}</strong>
+            <span>{copy.weeklyMomentumPanelTitle}</span>
           </div>
           <div className="combo-progress-panel">
             <div>
-              <span>{copy.currentCombo}</span>
-              <strong>{copy.comboProgress(run.currentRun, run.targetPomodoros)}</strong>
+              <span>{copy.weeklyRhythm}</span>
+              <strong>{copy.activeDays(week.activeDays)}</strong>
             </div>
             <div className="combo-segment-row" aria-hidden="true">
-              {Array.from({ length: run.targetPomodoros }, (_, index) => (
-                <i key={index} className={index < run.currentRun ? 'is-filled' : ''} />
+              {week.days.map((day) => (
+                <i key={day.date} className={day.stars > 0 ? 'is-filled' : ''} />
               ))}
             </div>
           </div>
           <div className="metric-week-head">
             <span>{copy.weekTitle}</span>
-            <strong>{copy.weekBestRun(week.weekBestRun)}</strong>
+            <strong>{copy.weekStars(week.weekStars)}</strong>
           </div>
           <MetricWeekRow days={week.days} weekdays={copy.weekdays} variant="combo" />
           <div className="metric-panel-stats">
             <span>
-              <small>{copy.currentCombo}</small>
-              <strong>{run.currentRun}</strong>
+              <small>{copy.todayStars}</small>
+              <strong>{week.todayStars}</strong>
             </span>
             <span>
-              <small>{copy.todayBestRun}</small>
-              <strong>{week.todayBestRun}</strong>
+              <small>{copy.activeStarDays}</small>
+              <strong>{week.activeDays}/7</strong>
             </span>
             <span>
-              <small>{copy.weekBest}</small>
-              <strong>{week.weekBestRun}</strong>
+              <small>{copy.weekTotal}</small>
+              <strong>{week.weekStars}</strong>
             </span>
           </div>
         </div>

@@ -906,6 +906,24 @@ async function runRevisionQa(browser) {
     await revisionCard.getByText('Partie : Chapitre QA').isVisible(),
     'Revision dashboard should show the course part',
   )
+  const priorityTag = revisionCard.getByRole('button', { name: 'Moyenne' })
+  await priorityTag.click()
+  const priorityMenu = revisionCard.locator('.revision-attribute-menu')
+  await priorityMenu.getByRole('menuitemradio', { name: 'Moyenne' }).click()
+  assert(
+    await priorityTag.isVisible(),
+    'Revision priority should be editable from its compact tag menu',
+  )
+  const difficultyTag = revisionCard.getByRole('button', { name: 'Normal' })
+  await difficultyTag.click()
+  await revisionCard
+    .locator('.revision-attribute-menu')
+    .getByRole('menuitemradio', { name: 'Normal' })
+    .click()
+  assert(
+    await difficultyTag.isVisible(),
+    'Revision difficulty should be editable from its compact tag menu',
+  )
   await revisionCard.getByRole('button', { name: 'Reviser' }).click()
 
   await page.waitForFunction(() => {
@@ -967,7 +985,11 @@ async function runRevisionQa(browser) {
   )
   await secondRevisionCard.waitFor({ state: 'visible' })
   await secondRevisionCard.getByRole('button', { name: 'Marquer termine' }).click()
-  await dashboard.locator('.revision-tabs').getByRole('button', { name: 'Terminees' }).click()
+  await dashboard.getByRole('button', { name: 'Filtrer' }).click()
+  await dashboard
+    .locator('.revision-filter-menu')
+    .getByRole('menuitemradio', { name: 'Terminees' })
+    .click()
   const completedGroup = dashboard.locator('.revision-completed-group', {
     hasText: 'QA Revision Source',
   })
@@ -2074,7 +2096,7 @@ async function main() {
       '.widget-frame-revisionDashboard, .widget-frame-revisionCalendar, .widget-frame-revisionMethods',
     ).length,
     revisionDashboardStats: document.querySelectorAll('.revision-dashboard .revision-stats-grid').length,
-    revisionSubjectFilters: document.querySelectorAll('.revision-dashboard [aria-label="Filtrer par matiere"]').length,
+    revisionFilterControls: document.querySelectorAll('.revision-dashboard [aria-label="Filtrer"]').length,
     oldRevisionFrames: document.querySelectorAll(
       '.widget-frame-revisionCalendar, .widget-frame-revisionMethods',
     ).length,
@@ -2148,7 +2170,7 @@ async function main() {
   assert(initial.visibleWidgets === 5, 'Expected five widgets on the dashboard')
   assert(initial.revisionFrames === 1, 'Only the revision dashboard widget should render')
   assert(initial.revisionDashboardStats === 0, 'Revision dashboard should not render the decorative stats cards')
-  assert(initial.revisionSubjectFilters === 1, 'Revision dashboard should expose a subject filter')
+  assert(initial.revisionFilterControls === 1, 'Revision dashboard should expose one unified filter control')
   assert(initial.oldRevisionFrames === 0, 'Old revision calendar and methods widgets should not render')
   assert(initial.revisionPlannerButtons === 1, 'Revision planner should have one dock button')
   assert(initial.guideButtons === 1, 'Guide should have one dock button')
@@ -3027,14 +3049,14 @@ async function main() {
     }, { today }),
     'Skipping focus should count as a completed focus without auto-starting the break',
   )
-  await page.getByRole('button', { name: 'Open best pomodoro run' }).click()
-  assert(await page.getByRole('dialog', { name: 'Best run' }).isVisible(), 'Best run panel did not open')
-  assert(await page.locator('.best-run-popover .metric-day').count() === 7, 'Best run panel should render seven week days')
+  await page.getByRole('button', { name: 'Open weekly momentum' }).click()
+  assert(await page.getByRole('dialog', { name: 'Weekly momentum' }).isVisible(), 'Weekly momentum panel did not open')
+  assert(await page.locator('.best-run-popover .metric-day').count() === 7, 'Weekly momentum panel should render seven week days')
   assert(
-    await page.locator('.best-run-popover').getByText('Current combo').count() >= 1,
-    'Best run panel missing current combo stat',
+    await page.locator('.best-run-popover').getByText('Weekly rhythm').count() >= 1,
+    'Weekly momentum panel missing weekly rhythm stat',
   )
-  await page.getByLabel('Close best run').click()
+  await page.getByLabel('Close weekly momentum').click()
   await page.getByRole('button', { name: 'Open total stars' }).click()
   assert(await page.getByRole('dialog', { name: 'Total stars' }).isVisible(), 'Total stars panel did not open')
   assert(await page.locator('.total-stars-popover .metric-day').count() === 7, 'Total stars panel should render seven week days')

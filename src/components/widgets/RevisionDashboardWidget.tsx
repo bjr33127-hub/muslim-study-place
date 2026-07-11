@@ -17,9 +17,10 @@ import {
   SignalLow,
   SignalMedium,
   Siren,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType } from 'react'
 import type { CSSProperties } from 'react'
 import type { AppCopy } from '../../lib/i18n'
@@ -109,20 +110,70 @@ function eventLabel(
   return revisionOffsetLabel(course, event, copy.revisionPrefix)
 }
 
-function AttributePill({
+type AttributeOption = {
+  value: string
+  label: string
+  icon: RevisionIcon
+}
+
+function AttributeSelector({
   className,
   icon: Icon,
   label,
+  menuId,
+  menuLabel,
+  options,
+  selectedValue,
+  isOpen,
+  onToggle,
+  onSelect,
 }: {
   className: string
   icon: RevisionIcon
   label: string
+  menuId: string
+  menuLabel: string
+  options: AttributeOption[]
+  selectedValue: string
+  isOpen: boolean
+  onToggle: () => void
+  onSelect: (value: string) => void
 }) {
   return (
-    <em className={`attribute-pill ${className}`}>
-      <Icon size={12} strokeWidth={2} />
-      <span>{label}</span>
-    </em>
+    <span className="revision-attribute-control">
+      <button
+        type="button"
+        className={`attribute-pill revision-attribute-trigger ${className}`}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-controls={isOpen ? menuId : undefined}
+        onClick={onToggle}
+      >
+        <Icon size={12} strokeWidth={2} />
+        <span>{label}</span>
+      </button>
+      {isOpen ? (
+        <div id={menuId} className="revision-attribute-menu" role="menu" aria-label={menuLabel}>
+          {options.map((option) => {
+            const OptionIcon = option.icon
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selectedValue === option.value}
+                className={selectedValue === option.value ? 'is-selected' : ''}
+                onClick={() => onSelect(option.value)}
+              >
+                <OptionIcon size={13} strokeWidth={2} />
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </span>
   )
 }
 
@@ -144,7 +195,9 @@ export function RevisionDashboardWidget({
   const [query, setQuery] = useState('')
   const [sortMode, setSortMode] = useState<TodoSortMode>('manual')
   const [subjectId, setSubjectId] = useState('')
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  const dashboardRef = useRef<HTMLDivElement>(null)
   const today = dateKey()
   const coursesById = useMemo(() => courseById(courses), [courses])
   const todayEvents = useMemo(
@@ -167,23 +220,44 @@ export function RevisionDashboardWidget({
     [visibleEvents],
   )
   const visibleCount = activeVisibleEvents.length + completedGroups.length
+  const selectedSubject = subjects.find((subject) => subject.id === subjectId)
+  const selectedSubjectLabel = subjectId === 'none'
+    ? copy.noSubject
+    : selectedSubject?.name ?? copy.allSubjects
+  const filterSummary = `${todoCopy.filters[filter]} / ${selectedSubjectLabel}`
+
+  useEffect(() => {
+    if (!openMenu) {
+      return undefined
+    }
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!dashboardRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenMenu(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [openMenu])
 
   return (
-    <div className="revision-dashboard">
+    <div ref={dashboardRef} className="revision-dashboard">
       <div className="revision-section-heading">
         <Flame size={16} strokeWidth={1.8} />
         <span>{copy.dashboardTitle}</span>
       </div>
       <div className="todo-toolbar revision-toolbar">
-        <label className="todo-search">
-          <Search size={14} strokeWidth={1.8} />
-          <input
-            value={query}
-            aria-label={todoCopy.search}
-            placeholder={todoCopy.searchPlaceholder}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
         <label className="todo-sort-select">
           <ListFilter size={14} strokeWidth={1.8} />
           <select
@@ -198,33 +272,86 @@ export function RevisionDashboardWidget({
             ))}
           </select>
         </label>
-        <label className="todo-sort-select revision-subject-filter">
-          <ListFilter size={14} strokeWidth={1.8} />
-          <select
-            aria-label={copy.subjectFilter}
-            value={subjectId}
-            onChange={(event) => setSubjectId(event.target.value)}
-          >
-            <option value="">{copy.allSubjects}</option>
-            <option value="none">{copy.noSubject}</option>
-            {subjects.map((subject) => (
-              <option key={subject.id} value={subject.id}>{subject.name}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="todo-tabs revision-tabs" aria-label={todoCopy.filterAria}>
-        {FILTERS.map((item) => (
+        <div className="revision-filter-control">
           <button
-            key={item}
-            className={filter === item ? 'is-selected' : ''}
             type="button"
-            onClick={() => setFilter(item)}
+            className={`todo-sort-select revision-filter-trigger${openMenu === 'filter' ? ' is-open' : ''}`}
+            aria-label={copy.filter}
+            aria-expanded={openMenu === 'filter'}
+            aria-haspopup="menu"
+            aria-controls={openMenu === 'filter' ? 'revision-filter-menu' : undefined}
+            onClick={() => setOpenMenu((current) => current === 'filter' ? null : 'filter')}
           >
-            {todoCopy.filters[item]}
+            <SlidersHorizontal size={14} strokeWidth={1.8} />
+            <span>{filterSummary}</span>
           </button>
-        ))}
+          {openMenu === 'filter' ? (
+            <div id="revision-filter-menu" className="revision-filter-menu" role="menu" aria-label={todoCopy.filterAria}>
+              <label className="todo-search revision-filter-search">
+                <Search size={14} strokeWidth={1.8} />
+                <input
+                  value={query}
+                  aria-label={todoCopy.search}
+                  placeholder={todoCopy.searchPlaceholder}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+              <div className="revision-filter-menu-section">
+                <span>{copy.filterStatus}</span>
+                <div>
+                  {FILTERS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={filter === item}
+                      className={filter === item ? 'is-selected' : ''}
+                      onClick={() => setFilter(item)}
+                    >
+                      {todoCopy.filters[item]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="revision-filter-menu-section">
+                <span>{copy.subject}</span>
+                <div>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={!subjectId}
+                    className={!subjectId ? 'is-selected' : ''}
+                    onClick={() => setSubjectId('')}
+                  >
+                    {copy.allSubjects}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={subjectId === 'none'}
+                    className={subjectId === 'none' ? 'is-selected' : ''}
+                    onClick={() => setSubjectId('none')}
+                  >
+                    {copy.noSubject}
+                  </button>
+                  {subjects.map((subject) => (
+                    <button
+                      key={subject.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={subjectId === subject.id}
+                      className={subjectId === subject.id ? 'is-selected' : ''}
+                      onClick={() => setSubjectId(subject.id)}
+                    >
+                      <i style={{ background: subject.color }} aria-hidden="true" />
+                      {subject.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="revision-today-list">
@@ -242,6 +369,8 @@ export function RevisionDashboardWidget({
           const PriorityIcon = priorityIcons[event.priority]
           const DifficultyIcon = difficultyIcons[event.difficulty]
           const isDone = event.status === 'done' || event.status === 'skipped'
+          const priorityMenuId = `revision-priority-menu-${event.id}`
+          const difficultyMenuId = `revision-difficulty-menu-${event.id}`
 
           return (
             <article
@@ -254,64 +383,60 @@ export function RevisionDashboardWidget({
               } as CSSProperties}
             >
               <div className="revision-card-main">
-                <span className="revision-kind">{eventLabel(copy, course, event)}</span>
                 <div className="revision-title-line">
+                  <span className="revision-kind">{eventLabel(copy, course, event)}</span>
                   <i className="revision-course-dot" style={{ background: course?.color }} aria-hidden="true" />
                   <strong>{title}</strong>
-                  <AttributePill
+                </div>
+                <div className="revision-card-meta">
+                  <AttributeSelector
                     className={`priority-pill priority-${event.priority}`}
                     icon={PriorityIcon}
                     label={todoCopy.priorities[event.priority]}
+                    menuId={priorityMenuId}
+                    menuLabel={todoCopy.priorityAria}
+                    selectedValue={event.priority}
+                    isOpen={openMenu === priorityMenuId}
+                    onToggle={() => setOpenMenu((current) => current === priorityMenuId ? null : priorityMenuId)}
+                    onSelect={(value) => {
+                      onUpdateEvent(event.id, { priority: value as TodoPriority })
+                      setOpenMenu(null)
+                    }}
+                    options={TODO_PRIORITIES.map((item) => ({
+                      value: item,
+                      label: todoCopy.priorities[item],
+                      icon: priorityIcons[item],
+                    }))}
                   />
-                  <AttributePill
+                  <AttributeSelector
                     className={`difficulty-pill difficulty-${event.difficulty}`}
                     icon={DifficultyIcon}
                     label={todoCopy.difficulties[event.difficulty]}
+                    menuId={difficultyMenuId}
+                    menuLabel={todoCopy.difficultyAria}
+                    selectedValue={event.difficulty}
+                    isOpen={openMenu === difficultyMenuId}
+                    onToggle={() => setOpenMenu((current) => current === difficultyMenuId ? null : difficultyMenuId)}
+                    onSelect={(value) => {
+                      onUpdateEvent(event.id, { difficulty: value as TodoDifficulty })
+                      setOpenMenu(null)
+                    }}
+                    options={TODO_DIFFICULTIES.map((item) => ({
+                      value: item,
+                      label: todoCopy.difficulties[item],
+                      icon: difficultyIcons[item],
+                    }))}
                   />
+                  <small>
+                    {course?.part ? `${copy.coursePartVisible(course.part)} · ` : ''}
+                    {formatShortDate(event.scheduledDate)}
+                    {event.scheduledTime ? ` ${event.scheduledTime}` : ''} -{' '}
+                    {copy.statuses[status]}
+                  </small>
                 </div>
-                {course?.part ? <small>{copy.coursePartVisible(course.part)}</small> : null}
-                <small>
-                  {formatShortDate(event.scheduledDate)}
-                  {event.scheduledTime ? ` ${event.scheduledTime}` : ''} -{' '}
-                  {copy.statuses[status]}
-                </small>
               </div>
 
-              <div className="revision-task-meta">
-                <label className="todo-priority-select revision-inline-select">
-                  <select
-                    aria-label={todoCopy.priorityAria}
-                    value={event.priority}
-                    onChange={(changeEvent) =>
-                      onUpdateEvent(event.id, {
-                        priority: changeEvent.target.value as TodoPriority,
-                      })
-                    }
-                  >
-                    {TODO_PRIORITIES.map((item) => (
-                      <option key={item} value={item}>
-                        {todoCopy.priorities[item]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="todo-difficulty-select todo-attribute-select revision-inline-select">
-                  <select
-                    aria-label={todoCopy.difficultyAria}
-                    value={event.difficulty}
-                    onChange={(changeEvent) =>
-                      onUpdateEvent(event.id, {
-                        difficulty: changeEvent.target.value as TodoDifficulty,
-                      })
-                    }
-                  >
-                    {TODO_DIFFICULTIES.map((item) => (
-                      <option key={item} value={item}>
-                        {todoCopy.difficulties[item]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="revision-card-tools">
                 <div className="goal-stepper small" aria-label={copy.objective}>
                   <button
                     type="button"
@@ -341,46 +466,41 @@ export function RevisionDashboardWidget({
                     <Plus size={13} strokeWidth={1.9} />
                   </button>
                 </div>
-              </div>
+                <div className="revision-card-actions">
+                  <button
+                    type="button"
+                    className="gold-action small"
+                    disabled={isDone}
+                    onClick={() => {
+                      if (isDone) {
+                        return
+                      }
 
-              <strong className="revision-progress-ratio" aria-label={copy.progress}>
-                {event.completedPomodoros}/{event.requiredPomodoros}
-              </strong>
+                      if (isActive && isTimerRunning) {
+                        onPauseEvent(event.id)
+                        return
+                      }
 
-              <div className="revision-card-actions">
-                <button
-                  type="button"
-                  className="gold-action small"
-                  disabled={isDone}
-                  onClick={() => {
-                    if (isDone) {
-                      return
-                    }
-
-                    if (isActive && isTimerRunning) {
-                      onPauseEvent(event.id)
-                      return
-                    }
-
-                    onStartEvent(event.id)
-                  }}
-                >
-                  {isActive && isTimerRunning ? (
-                    <Pause size={13} strokeWidth={2} />
-                  ) : (
-                    <Play size={13} strokeWidth={2} />
-                  )}
-                  {actionLabel}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-action small"
-                  disabled={isDone}
-                  onClick={() => onMarkDone(event.id)}
-                >
-                  <CheckCircle2 size={13} strokeWidth={1.9} />
-                  {copy.markDone}
-                </button>
+                      onStartEvent(event.id)
+                    }}
+                  >
+                    {isActive && isTimerRunning ? (
+                      <Pause size={13} strokeWidth={2} />
+                    ) : (
+                      <Play size={13} strokeWidth={2} />
+                    )}
+                    {actionLabel}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-action small"
+                    disabled={isDone}
+                    onClick={() => onMarkDone(event.id)}
+                  >
+                    <CheckCircle2 size={13} strokeWidth={1.9} />
+                    {copy.markDone}
+                  </button>
+                </div>
               </div>
             </article>
           )

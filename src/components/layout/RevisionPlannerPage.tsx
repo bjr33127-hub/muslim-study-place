@@ -137,6 +137,25 @@ const CALENDAR_VIEWS: PlannerView[] = [
 
 const DEFAULT_METHOD_ID = 'method-classic'
 
+function guideDraftStep(step?: GuideTourStep): CourseDraftStep {
+  if (step === 'course-details') {
+    return 1
+  }
+
+  if (step === 'course-create') {
+    return 2
+  }
+
+  return 0
+}
+
+function isGuideCourseWizardStep(step?: GuideTourStep) {
+  return step === 'course-name' ||
+    step === 'course-basics' ||
+    step === 'course-details' ||
+    step === 'course-create'
+}
+
 function courseToDraft(course: RevisionCourse): CourseDraft {
   const preset =
     REVISION_COLOR_PRESETS.find((item) => item.color === course.color) ??
@@ -232,8 +251,12 @@ export function RevisionPlannerPage({
   const [tab, setTab] = useState<PlannerTab>(() =>
     guideStep === 'course-delete' ? 'courses' : 'today',
   )
-  const [draft, setDraft] = useState<CourseDraft | null>(null)
-  const [draftStep, setDraftStep] = useState<CourseDraftStep>(0)
+  const [draft, setDraft] = useState<CourseDraft | null>(() =>
+    isGuideCourseWizardStep(guideStep) ? newDraft() : null,
+  )
+  const [draftStep, setDraftStep] = useState<CourseDraftStep>(() =>
+    guideDraftStep(guideStep),
+  )
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [courseSubjectFilter, setCourseSubjectFilter] = useState('')
@@ -544,6 +567,7 @@ export function RevisionPlannerPage({
     <section
       className={`revision-planner-page${hasEventPanel ? ' has-event-panel' : ''}`}
       aria-label={copy.plannerTitle}
+      data-guide="revision-planner"
     >
       <div className="revision-planner-shell">
         <header className="revision-planner-header">
@@ -628,6 +652,7 @@ export function RevisionPlannerPage({
                 className="gold-action"
                 type="button"
                 data-guide="revision-course-open"
+                data-guide-target="revision-course-open"
                 onClick={() => openNewCourse()}
               >
                 <Plus size={15} strokeWidth={2} />

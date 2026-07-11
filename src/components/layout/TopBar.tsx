@@ -14,11 +14,11 @@ import type {
   StreakUnlockCue,
 } from '../../types/app'
 import { AccountMenu } from './AccountMenu'
-import { BestRunBadge, TotalStarsBadge } from './PomodoroMetricBadges'
+import { TotalStarsBadge, WeeklyMomentumBadge } from './PomodoroMetricBadges'
 import { QuranMiniPlayer } from './QuranMiniPlayer'
 import { StreakFlame } from './StreakFlame'
 
-type OpenMetricPanel = 'streak' | 'bestRun' | 'totalStars' | null
+type OpenMetricPanel = 'streak' | 'weeklyMomentum' | 'totalStars' | null
 
 type TopBarProps = {
   copy: AppCopy
@@ -118,12 +118,12 @@ export function TopBar({
             onEffectChange={onFlameEffectChange}
             onClaimEvolution={onClaimFlameEvolution}
           />
-          <BestRunBadge
+          <WeeklyMomentumBadge
             run={run}
             copy={copy.topbar}
             burstKey={bestRunBurstKey}
-            isOpen={openMetricPanel === 'bestRun'}
-            onToggleOpen={() => toggleMetricPanel('bestRun')}
+            isOpen={openMetricPanel === 'weeklyMomentum'}
+            onToggleOpen={() => toggleMetricPanel('weeklyMomentum')}
             onClose={() => setOpenMetricPanel(null)}
           />
           <TotalStarsBadge

@@ -223,6 +223,93 @@ async function routeFakeYoutubeApi(context, videoIds) {
   )
 }
 
+async function runGuideQa(browser, viewport) {
+  const context = await browser.newContext({ viewport })
+  await context.addInitScript(() => localStorage.clear())
+  await routeFakeYoutubeApi(context, mockPlaylistVideos.map((video) => video.id))
+  await context.route('https://pipedapi.kavin.rocks/playlists/**', (route) =>
+    route.fulfill({
+      body: JSON.stringify(pipedPlaylistPayload({ nextpage: '' })),
+      contentType: 'application/json',
+    }),
+  )
+
+  const page = await context.newPage()
+  page.on('dialog', (dialog) => dialog.accept())
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+
+  const waitForStep = async (number) => {
+    await page.waitForFunction(
+      (expected) =>
+        document.querySelector('.guide-tour-header > div > strong')?.textContent?.trim() ===
+        `${expected}/18`,
+      number,
+    )
+    try {
+      await page.waitForFunction(
+        () => !document.querySelector('.guide-tour-waiting'),
+        null,
+        { timeout: 5000 },
+      )
+    } catch {
+      throw new Error(
+        `Guide step ${number} target is missing: ${await page.locator('.guide-tour-card').innerText()}`,
+      )
+    }
+  }
+  const advanceByAction = async (selector, expectedStep) => {
+    const target = page.locator(selector)
+    await target.waitFor({ state: 'visible' })
+    assert(await target.count() === 1, `Guide target ${selector} should be unique`)
+    await target.click()
+    await waitForStep(expectedStep)
+  }
+
+  await page.locator('.dock-guide-button').click()
+  await waitForStep(1)
+  await page.locator('.guide-tour-card .gold-action').click()
+  await waitForStep(2)
+  await advanceByAction('[data-guide="pomodoro-start"]', 3)
+
+  const todoForm = page.locator('[data-guide="todo-add-form"]')
+  await todoForm.locator('input').fill('Guide QA task')
+  await todoForm.locator('button[type="submit"]').click()
+  await waitForStep(4)
+
+  await advanceByAction('[data-guide="revisions-open"]', 5)
+  await advanceByAction('[data-guide="revision-planner"] [data-guide-target="revision-course-open"]', 6)
+  await page.locator('[data-guide="revision-course-title"]').fill('Guide QA course')
+  await waitForStep(7)
+  await advanceByAction('[data-guide="revision-course-continue-basics"]', 8)
+  await advanceByAction('[data-guide="revision-course-continue-details"]', 9)
+  await advanceByAction('[data-guide="revision-course-create"]', 10)
+
+  const courseDelete = page.locator('[data-guide-course-delete]').filter({ hasText: 'Supprimer' })
+  await courseDelete.waitFor({ state: 'visible' })
+  assert(await courseDelete.count() === 1, 'Guide should target only its newly created course')
+  await courseDelete.click()
+  await waitForStep(11)
+
+  await advanceByAction('[data-guide="friends-open"]', 12)
+  await advanceByAction('[data-guide="backgrounds-open"]', 13)
+  await advanceByAction('[data-guide-target="background-select"]', 14)
+  await advanceByAction('[data-guide="youtube-open"]', 15)
+  await advanceByAction('[data-guide="youtube-url-form"] button', 16)
+  await advanceByAction('[data-guide="youtube-mark-watched"]', 17)
+  await advanceByAction('[data-guide="settings-open"]', 18)
+
+  await page.locator('.guide-tour-card .gold-action').click()
+  await page.waitForSelector('.guide-tour', { state: 'detached' })
+  assert(
+    await page.evaluate(() =>
+      !JSON.parse(localStorage.getItem('muslim-study-place:revisionCourses') || '[]')
+        .some((course) => course.title === 'Guide QA course'),
+    ),
+    'Guide should remove its test course before finishing',
+  )
+  await context.close()
+}
+
 async function runYoutubePlaylistQa(browser) {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -1982,6 +2069,8 @@ async function main() {
   await runYoutubeNoApiIframeQa(browser)
   await runRevisionQa(browser)
   await runCloudSyncQa(browser)
+  await runGuideQa(browser, { width: 1280, height: 720 })
+  await runGuideQa(browser, { width: 390, height: 844 })
 
   const context = await browser.newContext({
     acceptDownloads: true,

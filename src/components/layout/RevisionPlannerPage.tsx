@@ -261,6 +261,7 @@ export function RevisionPlannerPage({
   const [error, setError] = useState('')
   const [courseSubjectFilter, setCourseSubjectFilter] = useState('')
   const [todaySubjectFilter, setTodaySubjectFilter] = useState('')
+  const activeTab: PlannerTab = guideStep === 'course-delete' ? 'courses' : tab
   const coursesById = useMemo(() => courseById(courses), [courses])
   const subjectsById = useMemo(() => subjectById(subjects), [subjects])
   const methodsById = useMemo(() => methodById(methods), [methods])
@@ -579,8 +580,8 @@ export function RevisionPlannerPage({
             <button
               type="button"
               role="tab"
-              aria-selected={tab === 'today'}
-              className={tab === 'today' ? 'is-selected' : ''}
+              aria-selected={activeTab === 'today'}
+              className={activeTab === 'today' ? 'is-selected' : ''}
               onClick={() => setTab('today')}
             >
               {copy.todayTab}
@@ -588,8 +589,8 @@ export function RevisionPlannerPage({
             <button
               type="button"
               role="tab"
-              aria-selected={tab === 'calendar'}
-              className={tab === 'calendar' ? 'is-selected' : ''}
+              aria-selected={activeTab === 'calendar'}
+              className={activeTab === 'calendar' ? 'is-selected' : ''}
               onClick={() => setTab('calendar')}
             >
               {copy.calendarTab}
@@ -597,8 +598,8 @@ export function RevisionPlannerPage({
             <button
               type="button"
               role="tab"
-              aria-selected={tab === 'courses'}
-              className={tab === 'courses' ? 'is-selected' : ''}
+              aria-selected={activeTab === 'courses'}
+              className={activeTab === 'courses' ? 'is-selected' : ''}
               onClick={() => setTab('courses')}
             >
               {copy.coursesTab}
@@ -606,8 +607,8 @@ export function RevisionPlannerPage({
             <button
               type="button"
               role="tab"
-              aria-selected={tab === 'methods'}
-              className={tab === 'methods' ? 'is-selected' : ''}
+              aria-selected={activeTab === 'methods'}
+              className={activeTab === 'methods' ? 'is-selected' : ''}
               onClick={() => setTab('methods')}
             >
               {copy.methodsTab}
@@ -623,7 +624,7 @@ export function RevisionPlannerPage({
           </button>
         </header>
 
-        {tab === 'today' ? (
+        {activeTab === 'today' ? (
           <div className="revision-planner-today-view" role="tabpanel">
             <div className="revision-stats-grid is-planner">
               <div className="revision-stat">
@@ -785,7 +786,7 @@ export function RevisionPlannerPage({
           </div>
         ) : null}
 
-        {tab === 'courses' ? (
+        {activeTab === 'courses' ? (
           <div className="revision-planner-courses-view" role="tabpanel">
             <div className="revision-planner-today-head">
               <div>
@@ -940,7 +941,7 @@ export function RevisionPlannerPage({
           </div>
         ) : null}
 
-        {tab === 'calendar' ? (
+        {activeTab === 'calendar' ? (
           <div className="revision-planner-calendar-view" role="tabpanel">
             <div className="revision-planner-toolbar">
               <div className="revision-view-switcher">
@@ -1076,7 +1077,7 @@ export function RevisionPlannerPage({
           </div>
         ) : null}
 
-        {tab === 'methods' ? (
+        {activeTab === 'methods' ? (
           <div className="revision-methods-view" role="tabpanel">
             <RevisionMethodsWidget
               copy={copy}

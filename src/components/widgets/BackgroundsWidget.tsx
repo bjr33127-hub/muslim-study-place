@@ -22,6 +22,8 @@ export function BackgroundsWidget({
   onUpload,
   onDeleteUpload,
 }: BackgroundsWidgetProps) {
+  const guideBackgroundId = backgrounds.find((background) => background.id !== selectedId)?.id
+
   return (
     <div className="backgrounds-widget">
       <label className="upload-button">
@@ -49,6 +51,9 @@ export function BackgroundsWidget({
               type="button"
               data-guide-background-choice={
                 selectedId === background.id ? undefined : background.id
+              }
+              data-guide-target={
+                background.id === guideBackgroundId ? 'background-select' : undefined
               }
               onClick={() => onSelect(background.id)}
             >

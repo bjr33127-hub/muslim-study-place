@@ -1445,7 +1445,7 @@ function App() {
       }
 
       if (keepsPlannerOpen) {
-        setMobileWorkspacePage(null)
+        setMobileWorkspacePage(isMobileWorkspace ? 'planner' : null)
         return
       }
 
@@ -1475,7 +1475,13 @@ function App() {
 
       setMobileWorkspacePage(null)
     },
-    [displayedTaskWindows, focusTaskWindow, focusWidget, hideWidget],
+    [
+      displayedTaskWindows,
+      focusTaskWindow,
+      focusWidget,
+      hideWidget,
+      isMobileWorkspace,
+    ],
   )
 
   const handleUpload = async (files: FileList | null) => {
@@ -3448,15 +3454,6 @@ function App() {
       {revisionPlannerVisible ? (
         <Suspense fallback={<div className="page-loader" role="status">{copy.app.loading}</div>}>
           <RevisionPlannerPage
-            key={
-              guideTourStep === 'course-delete'
-                ? 'guide-course-delete'
-                : ['course-name', 'course-basics', 'course-details', 'course-create'].includes(
-                    guideTourStep,
-                  )
-                  ? 'guide-course-wizard'
-                  : 'planner'
-            }
             copy={copy.revisions}
             todoCopy={copy.todo}
             language={language}

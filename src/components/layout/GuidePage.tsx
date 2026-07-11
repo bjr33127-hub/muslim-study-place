@@ -196,7 +196,7 @@ const GUIDE_COPY: Record<AppLanguage, GuideCopy> = {
         body:
           'Chaque decor est applique immediatement. Cette mission est facultative : tu peux garder ton fond actuel si tu le preferes.',
         task: 'Si tu veux, clique sur un fond different.',
-        selector: '[data-guide-background-choice]',
+        selector: '[data-guide-target="background-select"]',
         action: 'background-selected',
       },
       {
@@ -385,7 +385,7 @@ const GUIDE_COPY: Record<AppLanguage, GuideCopy> = {
         body:
           'Every scene applies immediately. This mission is optional, so keep your current background if you prefer it.',
         task: 'If you want, click a different background.',
-        selector: '[data-guide-background-choice]',
+        selector: '[data-guide-target="background-select"]',
         action: 'background-selected',
       },
       {
@@ -457,7 +457,9 @@ function findTarget(selector?: string) {
     return null
   }
 
-  return document.querySelector<HTMLElement>(selector)
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
+    (target) => target.getClientRects().length > 0,
+  ) ?? null
 }
 
 export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) {
@@ -484,7 +486,7 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
     const target = findTarget(targetSelector)
 
     if (!target) {
-      setTargetRect(null)
+      setTargetRect((current) => current ? null : current)
       return
     }
 
@@ -492,12 +494,21 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
       target.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
     }
     const rect = target.getBoundingClientRect()
-    setTargetRect({
+    const nextRect = {
       top: rect.top,
       left: rect.left,
       width: rect.width,
       height: rect.height,
-    })
+    }
+    setTargetRect((current) =>
+      current &&
+      current.top === nextRect.top &&
+      current.left === nextRect.left &&
+      current.width === nextRect.width &&
+      current.height === nextRect.height
+        ? current
+        : nextRect,
+    )
   }, [targetSelector])
 
   useEffect(() => {
@@ -507,10 +518,12 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
       return () => window.cancelAnimationFrame(secondFrame)
     })
     const retry = window.setTimeout(() => measureTarget(true), 320)
+    const targetRetry = window.setInterval(() => measureTarget(false), 180)
 
     return () => {
       window.cancelAnimationFrame(firstFrame)
       window.clearTimeout(retry)
+      window.clearInterval(targetRetry)
     }
   }, [measureTarget, onPrepareStep, step.id])
 
@@ -523,6 +536,13 @@ export function GuidePage({ language, onClose, onPrepareStep }: GuidePageProps) 
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
+  }, [measureTarget])
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => measureTarget(false))
+    observer.observe(document.body, { childList: true, subtree: true })
+
+    return () => observer.disconnect()
   }, [measureTarget])
 
   useEffect(() => {

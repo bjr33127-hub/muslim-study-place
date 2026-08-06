@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      bundle_path: ${{ steps.bundle.outputs.bundle_path }}
     env:
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
@@ -53,6 +55,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Record production bundle
+        id: bundle
+        run: |
+          BUNDLE_PATH="$(grep -oE 'assets/index-[^\"]+\.js' dist/index.html | head -n 1)"
+          if [ -z "$BUNDLE_PATH" ]; then
+            echo "::error::Unable to identify the production JavaScript bundle."
+            exit 1
+          fi
+          echo "bundle_path=$BUNDLE_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
@@ -72,5 +84,21 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        continue-on-error: true
         with:
           timeout: 1800000
+
+      - name: Verify the published bundle
+        env:
+          EXPECTED_BUNDLE: ${{ needs.build.outputs.bundle_path }}
+        run: |
+          SITE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          for attempt in {1..40}; do
+            if curl -fsSL -H "Cache-Control: no-cache" "${SITE_URL}?verify=${GITHUB_SHA}-${attempt}" | grep -Fq "$EXPECTED_BUNDLE"; then
+              echo "Published bundle verified: $EXPECTED_BUNDLE"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::GitHub Pages did not publish $EXPECTED_BUNDLE within 10 minutes."
+          exit 1

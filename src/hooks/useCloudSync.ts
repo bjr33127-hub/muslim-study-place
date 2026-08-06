@@ -7,6 +7,7 @@ import {
   getBrowserTimezone,
   getCloudAppState,
   getStoredCloudMeta,
+  normalizeCloudSnapshot,
   profileFromUser,
   saveCloudAppState,
   saveCloudStreakFromSnapshot,
@@ -34,6 +35,12 @@ const HIGH_FREQUENCY_SYNC_KEYS = new Set<DurableStorageKey>([
   'timer:remaining',
   'taskPomodoroMemory',
 ])
+const REVISION_PLANNER_SYNC_KEYS: DurableStorageKey[] = [
+  'revisionMethods',
+  'revisionSubjects',
+  'revisionCourses',
+  'revisionEvents',
+]
 
 type CloudSyncMode = 'automatic' | 'checkpoint' | 'manual' | 'recovery'
 
@@ -83,6 +90,16 @@ function snapshotsMatch(
   remote: CloudRemoteState['snapshot'],
 ) {
   return JSON.stringify(local.values) === JSON.stringify(remote.values)
+}
+
+function revisionPlannerSnapshotsMatch(
+  local: CloudRemoteState['snapshot'],
+  remote: CloudRemoteState['snapshot'],
+) {
+  return REVISION_PLANNER_SYNC_KEYS.every(
+    (key) =>
+      JSON.stringify(local.values[key]) === JSON.stringify(remote.values[key]),
+  )
 }
 
 export function useCloudSync() {
@@ -558,6 +575,53 @@ export function useCloudSync() {
       data.subscription.unsubscribe()
     }
   }, [bootstrapSession, client])
+
+  const realtimeUserId = user?.id
+
+  useEffect(() => {
+    if (!client || !realtimeUserId) {
+      return undefined
+    }
+
+    const channel = client
+      .channel(`cloud-app-state:${realtimeUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          filter: `user_id=eq.${realtimeUserId}`,
+          schema: 'public',
+          table: 'user_app_state',
+        },
+        (payload) => {
+          if (
+            userIdRef.current !== realtimeUserId ||
+            conflictRef.current
+          ) {
+            return
+          }
+
+          const remoteRow = payload.new as { snapshot?: unknown } | null
+          const remoteSnapshot = normalizeCloudSnapshot(remoteRow?.snapshot)
+          const lastSyncedSnapshot = lastSyncedSnapshotRef.current
+
+          if (
+            remoteSnapshot &&
+            lastSyncedSnapshot &&
+            revisionPlannerSnapshotsMatch(lastSyncedSnapshot, remoteSnapshot)
+          ) {
+            return
+          }
+
+          void performSyncRef.current('recovery')
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void client.removeChannel(channel)
+    }
+  }, [client, realtimeUserId])
 
   useEffect(() => {
     const handleStorageChange = (event: Event) => {

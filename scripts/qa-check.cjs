@@ -1231,6 +1231,7 @@ function installSupabaseMock(initialAppState = null) {
       history: {},
     },
     subscribers: [],
+    realtimeSubscribers: [],
   }
 
   const state = window.__mspSupabaseState
@@ -1312,6 +1313,47 @@ function installSupabaseMock(initialAppState = null) {
       updated_at: new Date().toISOString(),
     }
   }
+  state.applyRemoteRevisionPlannerChange = () => {
+    if (!state.appState) {
+      return
+    }
+
+    const snapshot = structuredClone(state.appState.snapshot)
+    snapshot.exportedAt = new Date().toISOString()
+    snapshot.values.revisionCourses = [
+      {
+        id: 'qa-remote-course',
+        title: 'Remote realtime course',
+        initialDate: today(),
+        professor: '',
+        part: '',
+        notes: '',
+        color: '#d8ad54',
+        textColor: '#18140e',
+        subjectId: null,
+        methodId: null,
+        excludedWeekdays: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ]
+    snapshot.values.revisionEvents = []
+    state.appState = {
+      snapshot,
+      revision: state.appState.revision + 1,
+      updated_at: new Date().toISOString(),
+    }
+
+    state.realtimeSubscribers.forEach(({ callback }) => {
+      callback({
+        eventType: 'UPDATE',
+        new: state.appState,
+        old: {},
+        schema: 'public',
+        table: 'user_app_state',
+      })
+    })
+  }
   const ok = (data = null) => ({ data, error: null })
 
   window.__MSP_SUPABASE_MOCK__ = {
@@ -1340,6 +1382,32 @@ function installSupabaseMock(initialAppState = null) {
         emit('SIGNED_OUT')
         return ok({})
       },
+    },
+    channel: () => {
+      const registrations = []
+      const channel = {
+        on: (_type, config, callback) => {
+          registrations.push({ callback, config })
+          return channel
+        },
+        subscribe: () => {
+          registrations.forEach((registration) => {
+            state.realtimeSubscribers.push({
+              ...registration,
+              channel,
+            })
+          })
+          return channel
+        },
+      }
+
+      return channel
+    },
+    removeChannel: async (channel) => {
+      state.realtimeSubscribers = state.realtimeSubscribers.filter(
+        (subscription) => subscription.channel !== channel,
+      )
+      return 'ok'
     },
     from: (table) => ({
       upsert: async (payload) => {
@@ -1957,6 +2025,25 @@ async function runCloudSyncQa(browser) {
         ] === true,
     ),
     'Starting or pausing the timer should immediately flush its latest second',
+  )
+
+  const realtimeReadCount = await emptyCloudPage.evaluate(
+    () => window.__mspSupabaseState.appStateReadCount,
+  )
+  await emptyCloudPage.evaluate(() => {
+    window.__mspSupabaseState.readDelayMs = 2_000
+    window.__mspSupabaseState.applyRemoteRevisionPlannerChange()
+  })
+  await emptyCloudPage.waitForFunction(
+    () => window.__mspSupabaseState.readInFlight === true,
+  )
+  assert(
+    await emptyCloudPage.evaluate(
+      (readCount) =>
+        window.__mspSupabaseState.appStateReadCount === readCount + 1,
+      realtimeReadCount,
+    ),
+    'A remote revision planner update should trigger an immediate cloud read',
   )
   await emptyCloudContext.close()
 

@@ -1101,6 +1101,174 @@ async function runRevisionQa(browser) {
   await context.close()
 }
 
+async function runGoogleCalendarSyncQa(browser) {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  })
+  const today = dateKeyForOffset(0)
+  const calendarRequests = []
+  let calendarMode = 'success'
+
+  await context.addInitScript(
+    ({ today }) => {
+      localStorage.clear()
+      localStorage.setItem(
+        'muslim-study-place:revisionCourses',
+        JSON.stringify([
+          {
+            id: 'qa-google-course',
+            title: 'QA Google Calendar',
+            initialDate: today,
+            professor: '',
+            part: 'Synchronisation',
+            notes: '',
+            color: '#8d6e63',
+            textColor: '#ffffff',
+            subjectId: null,
+            methodId: null,
+            excludedWeekdays: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        ]),
+      )
+      localStorage.setItem(
+        'muslim-study-place:revisionEvents',
+        JSON.stringify([
+          {
+            id: 'qa-google-event',
+            courseId: 'qa-google-course',
+            scheduledDate: today,
+            scheduledTime: '10:00',
+            kind: 'initial',
+            reviewIndex: 0,
+            totalReviews: 0,
+            status: 'pending',
+            priority: 'medium',
+            difficulty: 'normal',
+            requiredPomodoros: 1,
+            completedPomodoros: 0,
+            completedAt: null,
+            timeSpentSeconds: 0,
+          },
+        ]),
+      )
+      window.google = {
+        accounts: {
+          oauth2: {
+            initTokenClient: ({ callback }) => ({
+              requestAccessToken: () =>
+                window.setTimeout(
+                  () => callback({ access_token: 'qa-google-token' }),
+                  0,
+                ),
+            }),
+          },
+        },
+      }
+    },
+    { today },
+  )
+  await routeFakeYoutubeApi(context, mockPlaylistVideos.map((video) => video.id))
+  await context.route(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events**',
+    (route) => {
+      const method = route.request().method()
+      calendarRequests.push({ method, url: route.request().url() })
+
+      if (calendarMode === 'rate-limit' && method !== 'GET') {
+        route.fulfill({
+          body: JSON.stringify({
+            error: {
+              code: 403,
+              errors: [
+                {
+                  domain: 'usageLimits',
+                  message: 'Rate Limit Exceeded',
+                  reason: 'userRateLimitExceeded',
+                },
+              ],
+              message: 'Rate Limit Exceeded',
+              status: 'RESOURCE_EXHAUSTED',
+            },
+          }),
+          contentType: 'application/json',
+          status: 403,
+        })
+        return
+      }
+
+      if (method === 'GET') {
+        route.fulfill({
+          body: JSON.stringify({ items: [] }),
+          contentType: 'application/json',
+        })
+        return
+      }
+
+      route.fulfill({
+        body: JSON.stringify({ id: 'qa-google-event-1' }),
+        contentType: 'application/json',
+      })
+    },
+  )
+
+  const page = await context.newPage()
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.widget-frame-revisionDashboard')
+  await page.getByLabel('Ouvrir calendrier et methodes').click()
+  const planner = page.locator('.revision-planner-page')
+  await planner.waitFor({ state: 'visible' })
+  await planner.getByRole('tab', { name: 'Calendrier' }).click()
+  await planner.getByRole('button', { name: 'Connecter Google Calendar' }).click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.revision-google-calendar > strong')
+      ?.textContent?.includes('Synchronise a'),
+  )
+
+  assert(
+    calendarRequests.length === 2 &&
+      calendarRequests[0].method === 'GET' &&
+      calendarRequests[1].method === 'POST',
+    'Initial Google Calendar sync should search once and create once',
+  )
+  const requestsAfterInitialSync = calendarRequests.length
+  await page.waitForTimeout(2700)
+  assert(
+    calendarRequests.length === requestsAfterInitialSync,
+    'A successful Google Calendar sync must not trigger a state-driven sync loop',
+  )
+
+  calendarMode = 'rate-limit'
+  await planner.getByRole('button', { name: 'Synchroniser Calendar' }).click()
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.revision-google-calendar > strong')
+      ?.textContent?.includes('trop de demandes'),
+  )
+  assert(
+    await planner
+      .getByRole('button', { name: 'Connecte pour cette session' })
+      .isVisible(),
+    'A Google Calendar quota error must keep the OAuth session connected',
+  )
+  assert(
+    !(await planner.locator('.revision-google-calendar').innerText()).includes(
+      'connexion Google Calendar a expire',
+    ),
+    'A Google Calendar 403 quota error must not be reported as an expired token',
+  )
+  const requestsAfterRateLimit = calendarRequests.length
+  await page.waitForTimeout(1700)
+  assert(
+    calendarRequests.length === requestsAfterRateLimit,
+    'A Google Calendar error state must not schedule another automatic retry',
+  )
+
+  await context.close()
+}
+
 async function assertFlameStage(
   page,
   today,
@@ -2155,6 +2323,7 @@ async function main() {
   await runYoutubeJsonpFallbackQa(browser)
   await runYoutubeNoApiIframeQa(browser)
   await runRevisionQa(browser)
+  await runGoogleCalendarSyncQa(browser)
   await runCloudSyncQa(browser)
   await runGuideQa(browser, { width: 1280, height: 720 })
   await runGuideQa(browser, { width: 390, height: 844 })

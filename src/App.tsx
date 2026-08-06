@@ -545,6 +545,11 @@ function App() {
   )
   const googleCalendarTokenRef = useRef<string | null>(null)
   const googleCalendarSyncTimerRef = useRef<number>(0)
+  const googleCalendarSyncInFlightRef = useRef<Promise<void> | null>(null)
+  const googleCalendarSyncSourceRef = useRef({
+    courses: revisionCourses,
+    events: revisionEvents,
+  })
   const [googleCalendarSessionConnected, setGoogleCalendarSessionConnected] =
     useState(false)
   const activeTask = todos.find((todo) => todo.active && !todo.completed)
@@ -2830,34 +2835,53 @@ function App() {
         return
       }
 
-      try {
-        const nextState = await syncRevisionEventsToGoogleCalendar({
-          state: revisionGoogleCalendar,
-          events: revisionEvents,
-          courses: revisionCourses,
-          accessToken,
-          timezone: getBrowserTimezone(),
-        })
+      while (googleCalendarSyncInFlightRef.current) {
+        await googleCalendarSyncInFlightRef.current
+      }
 
-        setRevisionGoogleCalendar(nextState)
-      } catch (error) {
-        const errorCode = error instanceof Error ? error.message : ''
+      const syncPromise = (async () => {
+        try {
+          const nextState = await syncRevisionEventsToGoogleCalendar({
+            state: revisionGoogleCalendar,
+            events: revisionEvents,
+            courses: revisionCourses,
+            accessToken,
+            timezone: getBrowserTimezone(),
+          })
 
-        if (errorCode === 'google_calendar_auth_expired') {
-          googleCalendarTokenRef.current = null
-          setGoogleCalendarSessionConnected(false)
+          setRevisionGoogleCalendar(nextState)
+        } catch (error) {
+          const errorCode = error instanceof Error ? error.message : ''
+
+          if (
+            errorCode === 'google_calendar_auth_expired' &&
+            googleCalendarTokenRef.current === accessToken
+          ) {
+            googleCalendarTokenRef.current = null
+            setGoogleCalendarSessionConnected(false)
+          }
+
+          setRevisionGoogleCalendar((current) => ({
+            ...normalizeGoogleCalendarSync(current),
+            enabled: true,
+            lastError:
+              errorCode === 'google_calendar_auth_expired'
+                ? copy.revisions.googleCalendarAuthExpired
+                : errorCode === 'google_calendar_rate_limited'
+                  ? copy.revisions.googleCalendarRateLimited
+                  : copy.revisions.googleCalendarSyncFailed,
+          }))
         }
+      })()
 
-        setRevisionGoogleCalendar((current) => ({
-          ...normalizeGoogleCalendarSync(current),
-          enabled: true,
-          lastError:
-            errorCode === 'google_calendar_auth_expired'
-              ? copy.revisions.googleCalendarAuthExpired
-              : errorCode === 'google_calendar_rate_limited'
-                ? copy.revisions.googleCalendarRateLimited
-                : copy.revisions.googleCalendarSyncFailed,
-        }))
+      googleCalendarSyncInFlightRef.current = syncPromise
+
+      try {
+        await syncPromise
+      } finally {
+        if (googleCalendarSyncInFlightRef.current === syncPromise) {
+          googleCalendarSyncInFlightRef.current = null
+        }
       }
     },
     [
@@ -2914,7 +2938,17 @@ function App() {
   useEffect(() => {
     window.clearTimeout(googleCalendarSyncTimerRef.current)
 
+    const previousSource = googleCalendarSyncSourceRef.current
+    const sourceChanged =
+      previousSource.courses !== revisionCourses ||
+      previousSource.events !== revisionEvents
+    googleCalendarSyncSourceRef.current = {
+      courses: revisionCourses,
+      events: revisionEvents,
+    }
+
     if (
+      !sourceChanged ||
       !revisionGoogleCalendar.enabled ||
       !googleCalendarTokenRef.current ||
       !isGoogleCalendarConfigured()

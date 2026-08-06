@@ -127,6 +127,39 @@ function googleCalendarUrl(path = '') {
   return `https://www.googleapis.com/calendar/v3/calendars/primary/events${path}`
 }
 
+type GoogleCalendarErrorBody = {
+  error?: {
+    errors?: Array<{
+      domain?: string
+      reason?: string
+      message?: string
+    }>
+    status?: string
+    message?: string
+  }
+}
+
+async function isGoogleCalendarRateLimitError(response: Response) {
+  const body = (await response.json().catch(() => null)) as
+    | GoogleCalendarErrorBody
+    | null
+  const details = [
+    body?.error?.status,
+    body?.error?.message,
+    ...(body?.error?.errors ?? []).flatMap((error) => [
+      error.domain,
+      error.reason,
+      error.message,
+    ]),
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+
+  return /(?:userRateLimitExceeded|rateLimitExceeded|quotaExceeded|dailyLimitExceeded|RESOURCE_EXHAUSTED|usageLimits|rate limit|quota|usage limit)/i.test(
+    details,
+  )
+}
+
 async function googleCalendarRequest<T>(
   accessToken: string,
   path: string,
@@ -145,12 +178,19 @@ async function googleCalendarRequest<T>(
     throw new Error('google_event_not_found')
   }
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     throw new Error('google_calendar_auth_expired')
   }
 
-  if (response.status === 429) {
+  if (
+    response.status === 429 ||
+    (response.status === 403 && (await isGoogleCalendarRateLimitError(response)))
+  ) {
     throw new Error('google_calendar_rate_limited')
+  }
+
+  if (response.status === 403) {
+    throw new Error('google_calendar_forbidden')
   }
 
   if (!response.ok) {

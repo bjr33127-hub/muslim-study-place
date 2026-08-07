@@ -70,20 +70,41 @@ function parseRaw<T>(raw: string | null): T | undefined {
   }
 }
 
+function sanitizeDurableStorageValue(key: string, value: unknown) {
+  if (
+    key !== 'revisionGoogleCalendar' ||
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
+    return value
+  }
+
+  return {
+    ...(value as Record<string, unknown>),
+    lastError: null,
+  }
+}
+
 export function hasUsableStorageValue(key: string) {
   return parseRaw(window.localStorage.getItem(fullStorageKey(key))) !== undefined
 }
 
 export function readStorage<T>(key: string, fallback: T): T {
-  return parseRaw<T>(window.localStorage.getItem(fullStorageKey(key))) ?? fallback
+  const value = parseRaw<T>(window.localStorage.getItem(fullStorageKey(key)))
+
+  return (value === undefined
+    ? fallback
+    : sanitizeDurableStorageValue(key, value)) as T
 }
 
 export function writeStorage<T>(key: string, value: T) {
   let changed = true
+  const storedValue = sanitizeDurableStorageValue(key, value)
 
   try {
     const storageKey = fullStorageKey(key)
-    const serializedValue = JSON.stringify(value)
+    const serializedValue = JSON.stringify(storedValue)
 
     changed = window.localStorage.getItem(storageKey) !== serializedValue
 
@@ -103,7 +124,7 @@ export function writeStorage<T>(key: string, value: T) {
   }
 
   if (durable) {
-    void writeDurableStorage(key, value)
+    void writeDurableStorage(key, storedValue)
   }
 }
 
@@ -118,7 +139,7 @@ export async function writeDurableStorage<T>(key: string, value: T) {
     const tx = db.transaction(DURABLE_STATE_STORE, 'readwrite')
     const record: DurableRecord = {
       key,
-      value,
+      value: sanitizeDurableStorageValue(key, value),
       updatedAt: Date.now(),
     }
     const request = tx.objectStore(DURABLE_STATE_STORE).put(record)
@@ -155,7 +176,14 @@ export async function readDurableStorage<T>(key: string) {
 
     request.onsuccess = () => {
       const record = request.result as DurableRecord | undefined
-      resolve(record ? { value: record.value as T, updatedAt: record.updatedAt } : null)
+      resolve(
+        record
+          ? {
+              value: sanitizeDurableStorageValue(key, record.value) as T,
+              updatedAt: record.updatedAt,
+            }
+          : null,
+      )
     }
     request.onerror = () => reject(request.error)
     tx.oncomplete = () => db.close()
@@ -212,12 +240,12 @@ export async function buildDurableSnapshot(): Promise<DurableSnapshot> {
     const localValue = parseRaw(window.localStorage.getItem(fullStorageKey(key)))
 
     if (localValue !== undefined) {
-      values[key] = localValue
+      values[key] = sanitizeDurableStorageValue(key, localValue)
       return
     }
 
     if (durableValues.has(key)) {
-      values[key] = durableValues.get(key)
+      values[key] = sanitizeDurableStorageValue(key, durableValues.get(key))
     }
   })
 
@@ -241,9 +269,12 @@ export async function importDurableSnapshot(payload: unknown) {
     throw new Error('Invalid Muslim Study Place backup.')
   }
 
-  const entries = Object.entries(snapshot.values).filter(([key]) =>
-    isDurableStorageKey(key),
-  ) as Array<[DurableStorageKey, unknown]>
+  const entries = Object.entries(snapshot.values)
+    .filter(([key]) => isDurableStorageKey(key))
+    .map(([key, value]) => [
+      key,
+      sanitizeDurableStorageValue(key, value),
+    ]) as Array<[DurableStorageKey, unknown]>
   const importedKeys = new Set(entries.map(([key]) => key))
 
   await Promise.all(

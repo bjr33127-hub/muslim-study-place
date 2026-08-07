@@ -122,8 +122,12 @@ import {
   weekStartKey,
 } from './lib/revisions'
 import {
+  clearGoogleCalendarTokenSession,
+  isGoogleCalendarTokenSessionUsable,
   isGoogleCalendarConfigured,
+  readGoogleCalendarTokenSession,
   requestGoogleCalendarAccessToken,
+  storeGoogleCalendarTokenSession,
   syncRevisionEventsToGoogleCalendar,
 } from './lib/googleCalendar'
 import {
@@ -543,7 +547,10 @@ function App() {
     () => normalizeGoogleCalendarSync(revisionGoogleCalendarState),
     [revisionGoogleCalendarState],
   )
-  const googleCalendarTokenRef = useRef<string | null>(null)
+  const [initialGoogleCalendarTokenSession] = useState(() =>
+    readGoogleCalendarTokenSession(),
+  )
+  const googleCalendarTokenRef = useRef(initialGoogleCalendarTokenSession)
   const googleCalendarSyncTimerRef = useRef<number>(0)
   const googleCalendarSyncInFlightRef = useRef<Promise<void> | null>(null)
   const googleCalendarSyncSourceRef = useRef({
@@ -551,7 +558,9 @@ function App() {
     events: revisionEvents,
   })
   const [googleCalendarSessionConnected, setGoogleCalendarSessionConnected] =
-    useState(false)
+    useState(() =>
+      isGoogleCalendarTokenSessionUsable(initialGoogleCalendarTokenSession),
+    )
   const activeTask = todos.find((todo) => todo.active && !todo.completed)
   const activeRevisionEvent = revisionEvents.find(
     (event) => event.status === 'active' && event.completedPomodoros < event.requiredPomodoros,
@@ -2816,7 +2825,7 @@ function App() {
   )
 
   const performRevisionGoogleCalendarSync = useCallback(
-    async (accessToken = googleCalendarTokenRef.current) => {
+    async (accessToken = googleCalendarTokenRef.current?.accessToken) => {
       if (!isGoogleCalendarConfigured()) {
         setRevisionGoogleCalendar((current) => ({
           ...normalizeGoogleCalendarSync(current),
@@ -2855,9 +2864,10 @@ function App() {
 
           if (
             errorCode === 'google_calendar_auth_expired' &&
-            googleCalendarTokenRef.current === accessToken
+            googleCalendarTokenRef.current?.accessToken === accessToken
           ) {
             googleCalendarTokenRef.current = null
+            clearGoogleCalendarTokenSession()
             setGoogleCalendarSessionConnected(false)
           }
 
@@ -2899,16 +2909,19 @@ function App() {
 
   const connectRevisionGoogleCalendar = useCallback(async () => {
     try {
-      const token = await requestGoogleCalendarAccessToken()
-      googleCalendarTokenRef.current = token
+      const tokenSession = await requestGoogleCalendarAccessToken()
+      googleCalendarTokenRef.current = tokenSession
+      storeGoogleCalendarTokenSession(tokenSession)
       setGoogleCalendarSessionConnected(true)
       setRevisionGoogleCalendar((current) => ({
         ...normalizeGoogleCalendarSync(current),
         enabled: true,
         lastError: null,
       }))
-      await performRevisionGoogleCalendarSync(token)
+      await performRevisionGoogleCalendarSync(tokenSession.accessToken)
     } catch (error) {
+      googleCalendarTokenRef.current = null
+      clearGoogleCalendarTokenSession()
       setGoogleCalendarSessionConnected(false)
       setRevisionGoogleCalendar((current) => ({
         ...normalizeGoogleCalendarSync(current),
@@ -2927,12 +2940,16 @@ function App() {
   ])
 
   const syncRevisionGoogleCalendarNow = useCallback(async () => {
-    if (!googleCalendarTokenRef.current) {
+    const tokenSession = googleCalendarTokenRef.current
+
+    if (!isGoogleCalendarTokenSessionUsable(tokenSession)) {
+      googleCalendarTokenRef.current = null
+      clearGoogleCalendarTokenSession()
       await connectRevisionGoogleCalendar()
       return
     }
 
-    await performRevisionGoogleCalendarSync()
+    await performRevisionGoogleCalendarSync(tokenSession.accessToken)
   }, [connectRevisionGoogleCalendar, performRevisionGoogleCalendarSync])
 
   useEffect(() => {
@@ -2947,17 +2964,27 @@ function App() {
       events: revisionEvents,
     }
 
+    const tokenSession = googleCalendarTokenRef.current
+
+    if (!isGoogleCalendarTokenSessionUsable(tokenSession)) {
+      if (tokenSession) {
+        googleCalendarTokenRef.current = null
+        clearGoogleCalendarTokenSession()
+        setGoogleCalendarSessionConnected(false)
+      }
+      return
+    }
+
     if (
       !sourceChanged ||
       !revisionGoogleCalendar.enabled ||
-      !googleCalendarTokenRef.current ||
       !isGoogleCalendarConfigured()
     ) {
       return
     }
 
     googleCalendarSyncTimerRef.current = window.setTimeout(() => {
-      void performRevisionGoogleCalendarSync()
+      void performRevisionGoogleCalendarSync(tokenSession.accessToken)
     }, 1_200)
 
     return () => {

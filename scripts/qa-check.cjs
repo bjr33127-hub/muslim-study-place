@@ -1111,57 +1111,70 @@ async function runGoogleCalendarSyncQa(browser) {
 
   await context.addInitScript(
     ({ today }) => {
-      localStorage.clear()
-      localStorage.setItem(
-        'muslim-study-place:revisionCourses',
-        JSON.stringify([
-          {
-            id: 'qa-google-course',
-            title: 'QA Google Calendar',
-            initialDate: today,
-            professor: '',
-            part: 'Synchronisation',
-            notes: '',
-            color: '#8d6e63',
-            textColor: '#ffffff',
-            subjectId: null,
-            methodId: null,
-            excludedWeekdays: [],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        ]),
-      )
-      localStorage.setItem(
-        'muslim-study-place:revisionEvents',
-        JSON.stringify([
-          {
-            id: 'qa-google-event',
-            courseId: 'qa-google-course',
-            scheduledDate: today,
-            scheduledTime: '10:00',
-            kind: 'initial',
-            reviewIndex: 0,
-            totalReviews: 0,
-            status: 'pending',
-            priority: 'medium',
-            difficulty: 'normal',
-            requiredPomodoros: 1,
-            completedPomodoros: 0,
-            completedAt: null,
-            timeSpentSeconds: 0,
-          },
-        ]),
-      )
+      if (!sessionStorage.getItem('qa-google-calendar-initialized')) {
+        localStorage.clear()
+        sessionStorage.clear()
+        sessionStorage.setItem('qa-google-calendar-initialized', 'true')
+        localStorage.setItem(
+          'muslim-study-place:revisionCourses',
+          JSON.stringify([
+            {
+              id: 'qa-google-course',
+              title: 'QA Google Calendar',
+              initialDate: today,
+              professor: '',
+              part: 'Synchronisation',
+              notes: '',
+              color: '#8d6e63',
+              textColor: '#ffffff',
+              subjectId: null,
+              methodId: null,
+              excludedWeekdays: [],
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+          ]),
+        )
+        localStorage.setItem(
+          'muslim-study-place:revisionEvents',
+          JSON.stringify([
+            {
+              id: 'qa-google-event',
+              courseId: 'qa-google-course',
+              scheduledDate: today,
+              scheduledTime: '10:00',
+              kind: 'initial',
+              reviewIndex: 0,
+              totalReviews: 0,
+              status: 'pending',
+              priority: 'medium',
+              difficulty: 'normal',
+              requiredPomodoros: 1,
+              completedPomodoros: 0,
+              completedAt: null,
+              timeSpentSeconds: 0,
+            },
+          ]),
+        )
+      }
+      window.__qaGoogleTokenRequests = []
       window.google = {
         accounts: {
           oauth2: {
             initTokenClient: ({ callback }) => ({
-              requestAccessToken: () =>
+              requestAccessToken: (options = {}) => {
+                window.__qaGoogleTokenRequests.push(options)
+                const tokenNumber = window.__qaGoogleTokenRequests.length
+
                 window.setTimeout(
-                  () => callback({ access_token: 'qa-google-token' }),
+                  () =>
+                    callback({
+                      access_token: `qa-google-token-${tokenNumber}`,
+                      expires_in: 3600,
+                    }),
                   0,
-                ),
+                )
+              },
             }),
           },
         },
@@ -1174,7 +1187,11 @@ async function runGoogleCalendarSyncQa(browser) {
     'https://www.googleapis.com/calendar/v3/calendars/primary/events**',
     (route) => {
       const method = route.request().method()
-      calendarRequests.push({ method, url: route.request().url() })
+      calendarRequests.push({
+        authorization: route.request().headers().authorization,
+        method,
+        url: route.request().url(),
+      })
 
       if (calendarMode === 'rate-limit' && method !== 'GET') {
         route.fulfill({
@@ -1230,7 +1247,10 @@ async function runGoogleCalendarSyncQa(browser) {
   assert(
     calendarRequests.length === 2 &&
       calendarRequests[0].method === 'GET' &&
-      calendarRequests[1].method === 'POST',
+      calendarRequests[1].method === 'POST' &&
+      calendarRequests.every(
+        (request) => request.authorization === 'Bearer qa-google-token-1',
+      ),
     'Initial Google Calendar sync should search once and create once',
   )
   const requestsAfterInitialSync = calendarRequests.length
@@ -1240,30 +1260,91 @@ async function runGoogleCalendarSyncQa(browser) {
     'A successful Google Calendar sync must not trigger a state-driven sync loop',
   )
 
+  const storedTokenSession = await page.evaluate(() =>
+    JSON.parse(
+      sessionStorage.getItem(
+        'muslim-study-place:googleCalendarTokenSession',
+      ) || 'null',
+    ),
+  )
+  assert(
+    storedTokenSession?.accessToken === 'qa-google-token-1' &&
+      storedTokenSession.expiresAt > Date.now(),
+    'Google Calendar should keep its short-lived token in session storage',
+  )
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.widget-frame-revisionDashboard')
+  await page.getByLabel('Ouvrir calendrier et methodes').click()
+  const reloadedPlanner = page.locator('.revision-planner-page')
+  await reloadedPlanner.waitFor({ state: 'visible' })
+  await reloadedPlanner.getByRole('tab', { name: 'Calendrier' }).click()
+  assert(
+    await reloadedPlanner
+      .getByRole('button', { name: 'Connecte pour cette session' })
+      .isVisible(),
+    'Google Calendar should remain connected after a page or cloud reload',
+  )
+  assert(
+    calendarRequests.length === requestsAfterInitialSync,
+    'Restoring the Google Calendar session must not launch a duplicate sync',
+  )
+
   calendarMode = 'rate-limit'
-  await planner.getByRole('button', { name: 'Synchroniser Calendar' }).click()
+  await reloadedPlanner
+    .getByRole('button', { name: 'Synchroniser Calendar' })
+    .click()
   await page.waitForFunction(() =>
     document
       .querySelector('.revision-google-calendar > strong')
       ?.textContent?.includes('trop de demandes'),
   )
   assert(
-    await planner
+    await reloadedPlanner
       .getByRole('button', { name: 'Connecte pour cette session' })
       .isVisible(),
     'A Google Calendar quota error must keep the OAuth session connected',
   )
   assert(
-    !(await planner.locator('.revision-google-calendar').innerText()).includes(
-      'connexion Google Calendar a expire',
-    ),
+    !(
+      await reloadedPlanner.locator('.revision-google-calendar').innerText()
+    ).includes('connexion Google Calendar a expire'),
     'A Google Calendar 403 quota error must not be reported as an expired token',
   )
+  await page.waitForFunction(() => {
+    const state = JSON.parse(
+      localStorage.getItem('muslim-study-place:revisionGoogleCalendar') ||
+        'null',
+    )
+
+    return state?.lastError === null
+  })
   const requestsAfterRateLimit = calendarRequests.length
   await page.waitForTimeout(1700)
   assert(
     calendarRequests.length === requestsAfterRateLimit,
     'A Google Calendar error state must not schedule another automatic retry',
+  )
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.widget-frame-revisionDashboard')
+  await page.getByLabel('Ouvrir calendrier et methodes').click()
+  const finalPlanner = page.locator('.revision-planner-page')
+  await finalPlanner.waitFor({ state: 'visible' })
+  await finalPlanner.getByRole('tab', { name: 'Calendrier' }).click()
+  const finalCalendarText = await finalPlanner
+    .locator('.revision-google-calendar')
+    .innerText()
+  assert(
+    await finalPlanner
+      .getByRole('button', { name: 'Connecte pour cette session' })
+      .isVisible(),
+    'Google Calendar should remain connected after reloading an error state',
+  )
+  assert(
+    !finalCalendarText.includes('trop de demandes') &&
+      !finalCalendarText.includes('connexion Google Calendar a expire'),
+    'Session-only Google Calendar errors must not return after reload or cloud sync',
   )
 
   await context.close()

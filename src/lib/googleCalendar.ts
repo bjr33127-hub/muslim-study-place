@@ -14,13 +14,26 @@ export const GOOGLE_CALENDAR_SCOPE =
 
 type TokenResponse = {
   access_token?: string
+  expires_in?: number | string
   error?: string
   error_description?: string
 }
 
+type GoogleCalendarTokenPrompt = '' | 'consent' | 'none' | 'select_account'
+
 type TokenClient = {
-  requestAccessToken: (options?: { prompt?: string }) => void
+  requestAccessToken: (options?: { prompt?: GoogleCalendarTokenPrompt }) => void
 }
+
+export type GoogleCalendarTokenSession = {
+  accessToken: string
+  expiresAt: number
+}
+
+const GOOGLE_CALENDAR_SESSION_KEY =
+  'muslim-study-place:googleCalendarTokenSession'
+const DEFAULT_TOKEN_LIFETIME_SECONDS = 3_600
+const TOKEN_EXPIRY_BUFFER_MS = 60_000
 
 declare global {
   interface Window {
@@ -50,6 +63,71 @@ export function getGoogleCalendarClientId() {
 
 export function isGoogleCalendarConfigured() {
   return Boolean(getGoogleCalendarClientId())
+}
+
+function normalizeGoogleCalendarTokenSession(
+  value: unknown,
+): GoogleCalendarTokenSession | null {
+  const candidate = value as Partial<GoogleCalendarTokenSession>
+
+  if (
+    typeof candidate?.accessToken !== 'string' ||
+    !candidate.accessToken.trim() ||
+    typeof candidate.expiresAt !== 'number' ||
+    !Number.isFinite(candidate.expiresAt)
+  ) {
+    return null
+  }
+
+  return {
+    accessToken: candidate.accessToken,
+    expiresAt: candidate.expiresAt,
+  }
+}
+
+export function isGoogleCalendarTokenSessionUsable(
+  session: GoogleCalendarTokenSession | null,
+): session is GoogleCalendarTokenSession {
+  return Boolean(session && session.expiresAt - TOKEN_EXPIRY_BUFFER_MS > Date.now())
+}
+
+export function readGoogleCalendarTokenSession() {
+  try {
+    const raw = window.sessionStorage.getItem(GOOGLE_CALENDAR_SESSION_KEY)
+    const session = normalizeGoogleCalendarTokenSession(
+      raw ? JSON.parse(raw) : null,
+    )
+
+    if (!isGoogleCalendarTokenSessionUsable(session)) {
+      window.sessionStorage.removeItem(GOOGLE_CALENDAR_SESSION_KEY)
+      return null
+    }
+
+    return session
+  } catch {
+    return null
+  }
+}
+
+export function storeGoogleCalendarTokenSession(
+  session: GoogleCalendarTokenSession,
+) {
+  try {
+    window.sessionStorage.setItem(
+      GOOGLE_CALENDAR_SESSION_KEY,
+      JSON.stringify(session),
+    )
+  } catch {
+    // The in-memory session remains usable when browser storage is unavailable.
+  }
+}
+
+export function clearGoogleCalendarTokenSession() {
+  try {
+    window.sessionStorage.removeItem(GOOGLE_CALENDAR_SESSION_KEY)
+  } catch {
+    // The caller still clears its in-memory token.
+  }
 }
 
 function loadGoogleIdentityScript() {
@@ -83,7 +161,9 @@ function loadGoogleIdentityScript() {
   return googleIdentityScriptPromise
 }
 
-export async function requestGoogleCalendarAccessToken() {
+export async function requestGoogleCalendarAccessToken(
+  prompt: GoogleCalendarTokenPrompt = 'consent',
+) {
   const clientId = getGoogleCalendarClientId()
 
   if (!clientId) {
@@ -98,7 +178,7 @@ export async function requestGoogleCalendarAccessToken() {
     throw new Error('google_identity_unavailable')
   }
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<GoogleCalendarTokenSession>((resolve, reject) => {
     const client = oauth.initTokenClient({
       client_id: clientId,
       scope: GOOGLE_CALENDAR_SCOPE,
@@ -115,11 +195,21 @@ export async function requestGoogleCalendarAccessToken() {
           return
         }
 
-        resolve(response.access_token)
+        const lifetimeSeconds = Number(response.expires_in)
+
+        resolve({
+          accessToken: response.access_token,
+          expiresAt:
+            Date.now() +
+            (Number.isFinite(lifetimeSeconds) && lifetimeSeconds > 0
+              ? lifetimeSeconds
+              : DEFAULT_TOKEN_LIFETIME_SECONDS) *
+              1_000,
+        })
       },
     })
 
-    client.requestAccessToken({ prompt: 'consent' })
+    client.requestAccessToken({ prompt })
   })
 }
 
